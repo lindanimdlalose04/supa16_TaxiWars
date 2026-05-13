@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>KZN Taxi Wars — Map Editor</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; }
+        body {
+            background: #1a1a2e;
+            font-family: 'Segoe UI', monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            color: #eee;
+        }
+        .editor-container {
+            background: #0f0f1a;
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        canvas {
+            background: #0a0a12;
+            border-radius: 8px;
+            cursor: crosshair;
+            box-shadow: 0 0 0 2px #4a2a6a;
+        }
+        .sidebar {
+            width: 320px;
+            background: #0f0f1a;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        button {
+            background: #2a1a3a;
+            border: 1px solid #b84aff;
+            color: #d4aaff;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.1s;
+        }
+        button:hover { background: #4a2a6a; color: white; }
+        .node-list {
+            background: #050508;
+            border-radius: 8px;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .node-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            border-bottom: 1px solid #2a2a3a;
+            cursor: pointer;
+        }
+        .node-item:hover { background: #2a1a3a; }
+        .selected-node { background: #4a2a6a; color: white; }
+        .code-preview {
+            background: #050508;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+        input, select {
+            background: #1a1a2a;
+            border: 1px solid #4a2a6a;
+            color: white;
+            padding: 6px;
+            border-radius: 6px;
+            width: 100%;
+        }
+        .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+        hr { border-color: #2a2a3a; }
+        .status { font-size: 12px; color: #b84aff; }
+    </style>
+</head>
+<body>
+<div class="editor-container">
+    <canvas id="mapCanvas" width="800" height="800"></canvas>
+</div>
+<div class="sidebar">
+    <h2>🗺️ KZN ROUTE EDITOR</h2>
+    <div class="status" id="statusMsg">⚡ Click node → drag to move | Click node → click another = toggle route</div>
+    
+    <div class="toolbar">
+        <button id="btnAddNode">➕ Add Node</button>
+        <button id="btnClearRoutes">🗑️ Clear All Routes</button>
+        <button id="btnResetMap">🔄 Reset Demo Map</button>
+        <button id="btnExport">📋 Export Lua Code</button>
+    </div>
+    
+    <div>
+        <h3>✏️ Selected Node</h3>
+        <label>Name: <input type="text" id="nodeName" placeholder="Town name"></label>
+        <label>Customers: <input type="number" id="nodeCustomers" min="0" max="9" value="1"></label>
+        <label>Obstacle on selected route (if any): 
+            <select id="routeObstacle">
+                <option value="nil">None</option>
+                <option value="NK">NKABI</option>
+                <option value="SNK">SUPER NKABI</option>
+                <option value="POL">POLICE</option>
+            </select>
+        </label>
+        <button id="btnUpdateNode">Update Node</button>
+        <button id="btnDeleteNode" style="background:#4a1515;">❌ Delete Node</button>
+    </div>
+    
+    <div>
+        <h3>📍 Nodes (click to select)</h3>
+        <div id="nodeList" class="node-list"></div>
+    </div>
+    
+    <div>
+        <h3>📄 Lua Output</h3>
+        <div id="codePreview" class="code-preview">// Export will appear here</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const width = 800, height = 800;
+    
+    // Data model
+    let nodes = [];
+    let routes = []; // { from, to, obstacle }
+    let nextId = 25;
+    let selectedNodeId = null;
+    let dragTarget = null;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    
+    // Default demo map (fixed version of KZN)
+    function initDemoMap() {
+        nodes = [
+            { id: 1, name: "Jozini", x: 620, y: 80, customers: 1 },
+            { id: 2, name: "Pongola", x: 460, y: 110, customers: 2 },
+            { id: 3, name: "Vryheid", x: 280, y: 140, customers: 3 },
+            { id: 4, name: "Newcastle", x: 130, y: 120, customers: 1 },
+            { id: 5, name: "Dundee", x: 210, y: 210, customers: 2 },
+            { id: 6, name: "Ladysmith", x: 100, y: 390, customers: 3 },
+            { id: 7, name: "Estcourt", x: 115, y: 490, customers: 2 },
+            { id: 8, name: "Mooi River", x: 190, y: 380, customers: 1 },
+            { id: 9, name: "Pietermaritzburg", x: 270, y: 540, customers: 5 },
+            { id: 10, name: "Durban", x: 680, y: 610, customers: 5 },
+            { id: 11, name: "Stanger", x: 610, y: 510, customers: 2 },
+            { id: 12, name: "Empangeni", x: 590, y: 350, customers: 3 },
+            { id: 13, name: "Richards Bay", x: 680, y: 320, customers: 4 },
+            { id: 14, name: "Eshowe", x: 490, y: 400, customers: 2 },
+            { id: 15, name: "Melmoth", x: 410, y: 310, customers: 2 },
+            { id: 16, name: "Ulundi", x: 390, y: 220, customers: 3 },
+            { id: 17, name: "Nongoma", x: 500, y: 180, customers: 3 },
+            { id: 18, name: "Hluhluwe", x: 610, y: 220, customers: 2 },
+            { id: 19, name: "Mkuze", x: 560, y: 135, customers: 1 },
+            { id: 20, name: "Port Shepstone", x: 480, y: 690, customers: 3 },
+            { id: 21, name: "Margate", x: 570, y: 740, customers: 2 },
+            { id: 22, name: "Port Edward", x: 420, y: 750, customers: 1 },
+            { id: 23, name: "Harding", x: 310, y: 690, customers: 2 },
+            { id: 24, name: "Kokstad", x: 160, y: 710, customers: 2 }
+        ];
+        
+        routes = [
+            { from: 1, to: 2, obstacle: null }, { from: 1, to: 19, obstacle: null },
+            { from: 2, to: 3, obstacle: null }, { from: 2, to: 17, obstacle: null },
+            { from: 3, to: 4, obstacle: "POL" }, { from: 3, to: 5, obstacle: null },
+            { from: 3, to: 16, obstacle: null }, { from: 4, to: 5, obstacle: null },
+            { from: 5, to: 6, obstacle: null }, { from: 5, to: 8, obstacle: null },
+            { from: 6, to: 7, obstacle: null }, { from: 6, to: 8, obstacle: "SNK" },
+            { from: 7, to: 9, obstacle: null }, { from: 8, to: 9, obstacle: "NK" },
+            { from: 9, to: 14, obstacle: null }, { from: 9, to: 23, obstacle: null },
+            { from: 14, to: 15, obstacle: null }, { from: 15, to: 12, obstacle: "POL" },
+            { from: 12, to: 13, obstacle: null }, { from: 13, to: 10, obstacle: "POL" },
+            { from: 11, to: 10, obstacle: null }, { from: 11, to: 12, obstacle: null },
+            { from: 10, to: 21, obstacle: null }, { from: 20, to: 21, obstacle: "NK" },
+            { from: 20, to: 10, obstacle: "SNK" }, { from: 20, to: 23, obstacle: null },
+            { from: 21, to: 22, obstacle: "POL" }, { from: 22, to: 23, obstacle: null },
+            { from: 23, to: 24, obstacle: null }, { from: 24, to: 7, obstacle: null },
+            { from: 9, to: 11, obstacle: null }
+        ];
+        nextId = 25;
+    }
+    
+    function addNode() {
+        const newId = nextId++;
+        nodes.push({
+            id: newId,
+            name: `Town ${newId}`,
+            x: 400 + Math.random() * 200,
+            y: 400 + Math.random() * 200,
+            customers: 1
+        });
+        selectedNodeId = newId;
+        updateUI();
+        draw();
+    }
+    
+    function deleteNode(id) {
+        nodes = nodes.filter(n => n.id !== id);
+        routes = routes.filter(r => r.from !== id && r.to !== id);
+        if (selectedNodeId === id) selectedNodeId = nodes.length ? nodes[0]?.id : null;
+        updateUI();
+        draw();
+    }
+    
+    function toggleRoute(nodeA, nodeB) {
+        if (nodeA === nodeB) return;
+        const exists = routes.find(r => (r.from === nodeA && r.to === nodeB) || (r.from === nodeB && r.to === nodeA));
+        if (exists) {
+            routes = routes.filter(r => !(r.from === nodeA && r.to === nodeB) && !(r.from === nodeB && r.to === nodeA));
+            document.getElementById('statusMsg').innerText = `❌ Removed route ${nodeA} ↔ ${nodeB}`;
+        } else {
+            routes.push({ from: nodeA, to: nodeB, obstacle: null });
+            document.getElementById('statusMsg').innerText = `✅ Added route ${nodeA} ↔ ${nodeB}`;
+        }
+        updateUI();
+        draw();
+    }
+    
+    function updateSelectedNode() {
+        if (!selectedNodeId) return;
+        const node = nodes.find(n => n.id === selectedNodeId);
+        if (node) {
+            node.name = document.getElementById('nodeName').value;
+            node.customers = parseInt(document.getElementById('nodeCustomers').value);
+        }
+        updateUI();
+        draw();
+    }
+    
+    function updateRouteObstacle() {
+        if (!selectedNodeId) return;
+        // Find route where selected node is part of it? We'll do: if exactly one route selected? Simpler: we store temp
+        // For now, we'll set obstacle on the first route that involves selected node (or let user click route later)
+        document.getElementById('statusMsg').innerText = "Click on a route in the list to edit its obstacle";
+    }
+    
+    function renderNodeList() {
+        const container = document.getElementById('nodeList');
+        container.innerHTML = '';
+        nodes.forEach(node => {
+            const div = document.createElement('div');
+            div.className = `node-item ${selectedNodeId === node.id ? 'selected-node' : ''}`;
+            div.innerHTML = `<strong>${node.id}</strong> ${node.name} (${node.customers} 🧑) @ (${Math.round(node.x)},${Math.round(node.y)})`;
+            div.onclick = () => {
+                selectedNodeId = node.id;
+                document.getElementById('nodeName').value = node.name;
+                document.getElementById('nodeCustomers').value = node.customers;
+                updateUI();
+                draw();
+            };
+            container.appendChild(div);
+        });
+    }
+    
+    function updateUI() {
+        renderNodeList();
+        if (selectedNodeId) {
+            const node = nodes.find(n => n.id === selectedNodeId);
+            if (node) {
+                document.getElementById('nodeName').value = node.name;
+                document.getElementById('nodeCustomers').value = node.customers;
+            }
+        }
+    }
+    
+    function exportLua() {
+        // Generate nodes table
+        let lua = "-- AUTO-GENERATED FROM MAP EDITOR\n\nlocal nodes = {\n";
+        nodes.forEach(n => {
+            lua += `    {id=${n.id}, name="${n.name}", x=${Math.round(n.x)}, y=${Math.round(n.y)}, customers=${n.customers}},\n`;
+        });
+        lua += "}\n\nlocal routes = {\n";
+        routes.forEach(r => {
+            const obs = r.obstacle ? `"${r.obstacle}"` : "nil";
+            lua += `    {from=${r.from}, to=${r.to}, obstacle=${obs}, cleared=false},\n`;
+        });
+        lua += "}\n\n-- CUSTOMER MAP (optional override)\nlocal NODE_CUSTOMERS = {\n";
+        nodes.forEach(n => {
+            lua += `    [${n.id}]=${n.customers},\n`;
+        });
+        lua += "}\n\nreturn { nodes = nodes, routes = routes, node_customers = NODE_CUSTOMERS }\n";
+        document.getElementById('codePreview').innerText = lua;
+        navigator.clipboard.writeText(lua);
+        document.getElementById('statusMsg').innerText = "✅ Lua code copied to clipboard!";
+    }
+    
+    // Drawing
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        // Draw grid
+        ctx.strokeStyle = "#1a1a2a";
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i < width; i += 50) {
+            ctx.beginPath();
+            ctx.moveTo(i, 0);
+            ctx.lineTo(i, height);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(width, i);
+            ctx.stroke();
+        }
+        
+        // Draw routes
+        routes.forEach(route => {
+            const fromNode = nodes.find(n => n.id === route.from);
+            const toNode = nodes.find(n => n.id === route.to);
+            if (!fromNode || !toNode) return;
+            ctx.beginPath();
+            ctx.moveTo(fromNode.x, fromNode.y);
+            ctx.lineTo(toNode.x, toNode.y);
+            ctx.strokeStyle = route.obstacle ? "#ff66aa" : "#8844cc";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            if (route.obstacle) {
+                const mx = (fromNode.x + toNode.x)/2;
+                const my = (fromNode.y + toNode.y)/2;
+                ctx.fillStyle = "#ff44aa";
+                ctx.font = "bold 12px monospace";
+                ctx.shadowBlur = 0;
+                ctx.fillText(route.obstacle, mx-8, my-6);
+            }
+        });
+        
+        // Draw nodes
+        nodes.forEach(node => {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 14, 0, Math.PI*2);
+            ctx.fillStyle = selectedNodeId === node.id ? "#ff88ff" : "#3a2a5a";
+            ctx.fill();
+            ctx.strokeStyle = "#b84aff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = "white";
+            ctx.font = "bold 14px monospace";
+            ctx.fillText(node.id, node.x-6, node.y-8);
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#ddd";
+            ctx.fillText(node.name.substring(0,8), node.x-20, node.y+20);
+            if (node.customers > 0) {
+                ctx.fillStyle = "#ffaa44";
+                ctx.beginPath();
+                ctx.arc(node.x+12, node.y-10, 8, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.fillText(node.customers, node.x+8, node.y-7);
+            }
+        });
+    }
+    
+    // Mouse handling
+    function handleMouseDown(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const mouseX = (e.clientX - rect.left) * scaleX;
+        const mouseY = (e.clientY - rect.top) * scaleY;
+        
+        // Check for node click
+        for (let i = nodes.length-1; i >= 0; i--) {
+            const n = nodes[i];
+            const dx = mouseX - n.x;
+            const dy = mouseY - n.y;
+            if (Math.hypot(dx, dy) < 18) {
+                if (e.button === 0) {
+                    if (dragTarget === null) {
+                        dragTarget = n;
+                        dragOffsetX = n.x - mouseX;
+                        dragOffsetY = n.y - mouseY;
+                        selectedNodeId = n.id;
+                        updateUI();
+                        draw();
+                    }
+                }
+                return;
+            }
+        }
+        dragTarget = null;
+    }
+    
+    function handleMouseMove(e) {
+        if (!dragTarget) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        let mouseX = (e.clientX - rect.left) * scaleX;
+        let mouseY = (e.clientY - rect.top) * scaleY;
+        mouseX = Math.min(width-20, Math.max(20, mouseX));
+        mouseY = Math.min(height-20, Math.max(20, mouseY));
+        dragTarget.x = mouseX + dragOffsetX;
+        dragTarget.y = mouseY + dragOffsetY;
+        draw();
+    }
+    
+    function handleMouseUp(e) {
+        if (dragTarget) {
+            dragTarget = null;
+            updateUI();
+            draw();
+            return;
+        }
+        // If no drag, check for route toggle between two clicks (simplified: we'll use click on node)
+        // Better: double-click on node? Let's do: shift+click toggles route with last selected.
+        // We'll implement: click node A, then click node B = toggle route.
+        if (selectedNodeId !== null) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            for (let n of nodes) {
+                if (Math.hypot(mouseX - n.x, mouseY - n.y) < 18 && n.id !== selectedNodeId) {
+                    toggleRoute(selectedNodeId, n.id);
+                    break;
+                }
+            }
+        }
+    }
+    
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    
+    document.getElementById('btnAddNode').onclick = addNode;
+    document.getElementById('btnResetMap').onclick = () => { initDemoMap(); selectedNodeId = nodes[0]?.id; updateUI(); draw(); };
+    document.getElementById('btnExport').onclick = exportLua;
+    document.getElementById('btnUpdateNode').onclick = updateSelectedNode;
+    document.getElementById('btnDeleteNode').onclick = () => { if (selectedNodeId) deleteNode(selectedNodeId); };
+    document.getElementById('btnClearRoutes').onclick = () => { routes = []; draw(); updateUI(); };
+    
+    initDemoMap();
+    selectedNodeId = 1;
+    updateUI();
+    draw();
+</script>
+</body>
+</html>

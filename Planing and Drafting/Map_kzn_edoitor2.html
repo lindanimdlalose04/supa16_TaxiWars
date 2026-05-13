@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>KZN Taxi Wars — Map Editor v2</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; }
+        body {
+            background: #1a1a2e;
+            font-family: 'Segoe UI', monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            color: #eee;
+        }
+        .editor-container {
+            background: #0f0f1a;
+            border-radius: 12px;
+            padding: 10px;
+        }
+        canvas {
+            background: #0a0a12;
+            border-radius: 8px;
+            cursor: grab;
+            box-shadow: 0 0 0 2px #4a2a6a;
+        }
+        canvas:active { cursor: grabbing; }
+        .sidebar {
+            width: 380px;
+            background: #0f0f1a;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 800px;
+            overflow-y: auto;
+        }
+        button {
+            background: #2a1a3a;
+            border: 1px solid #b84aff;
+            color: #d4aaff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #4a2a6a; color: white; }
+        .danger-btn { background: #4a1515; border-color: #ff6666; }
+        .success-btn { background: #1a4a2a; border-color: #66ff88; }
+        
+        .panel {
+            background: #050508;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 4px;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #c98aff;
+            margin-bottom: 10px;
+        }
+        
+        select, input {
+            background: #1a1a2a;
+            border: 1px solid #4a2a6a;
+            color: white;
+            padding: 8px;
+            border-radius: 6px;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+        
+        .connection-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .connection-row select { flex: 1; margin-bottom: 0; }
+        
+        .node-list, .route-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .node-item, .route-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 8px;
+            border-bottom: 1px solid #2a2a3a;
+            cursor: pointer;
+        }
+        .node-item:hover, .route-item:hover { background: #2a1a3a; }
+        .selected-node { background: #4a2a6a; color: white; }
+        .selected-route { background: #6a2a8a; color: white; }
+        
+        .code-preview {
+            background: #050508;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 10px;
+            max-height: 250px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+        
+        .status {
+            font-size: 11px;
+            color: #88ffaa;
+            padding: 6px;
+            background: #1a1a2a;
+            border-radius: 6px;
+        }
+        
+        hr { border-color: #2a2a3a; margin: 8px 0; }
+        .flex-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .badge { 
+            display: inline-block; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .badge-NK { background: #ff66aa; color: #1a1a2e; }
+        .badge-SNK { background: #ff4444; color: white; }
+        .badge-POL { background: #4488ff; color: white; }
+        .badge-clean { background: #4a6a4a; color: #aaffaa; }
+    </style>
+</head>
+<body>
+<div class="editor-container">
+    <canvas id="mapCanvas" width="800" height="800"></canvas>
+</div>
+<div class="sidebar">
+    <h2>🗺️ KZN ROUTE EDITOR</h2>
+    <div class="status" id="statusMsg">✓ Ready | Drag nodes to move them</div>
+    
+    <!-- ===== CONNECTION PANEL ===== -->
+    <div class="panel">
+        <div class="panel-title">🔗 CONNECT NODES (RELIABLE WAY)</div>
+        <div class="connection-row">
+            <select id="connectFrom">
+                <option value="">-- From Node --</option>
+            </select>
+            <span>→</span>
+            <select id="connectTo">
+                <option value="">-- To Node --</option>
+            </select>
+        </div>
+        <div class="flex-row">
+            <button id="btnConnect" style="flex:2;">➕ Add / Update Road</button>
+            <button id="btnDisconnect" class="danger-btn" style="flex:1;">❌ Remove</button>
+        </div>
+    </div>
+    
+    <!-- ===== SELECTED ROAD EDITOR ===== -->
+    <div class="panel">
+        <div class="panel-title">🛣️ ROAD OBSTACLE</div>
+        <div id="selectedRouteInfo" style="font-size:12px; color:#aaa; margin-bottom:8px;">No road selected</div>
+        <select id="routeObstacle">
+            <option value="nil">🚗 Normal (no obstacle)</option>
+            <option value="NK">💀 NKABI - lose 2 points</option>
+            <option value="SNK">💀💀 SUPER NKABI - sent back 3 nodes</option>
+            <option value="POL">👮 POLICE - skip next turn</option>
+        </select>
+        <button id="btnUpdateRoute" class="success-btn">Apply to Selected Road</button>
+    </div>
+    
+    <!-- ===== SELECTED NODE EDITOR ===== -->
+    <div class="panel">
+        <div class="panel-title">📍 SELECTED NODE</div>
+        <input type="text" id="nodeName" placeholder="Town name">
+        <input type="number" id="nodeCustomers" min="0" max="9" value="1">
+        <div class="flex-row">
+            <button id="btnUpdateNode" style="flex:2;">✏️ Update Node</button>
+            <button id="btnDeleteNode" class="danger-btn" style="flex:1;">🗑️ Delete</button>
+        </div>
+    </div>
+    
+    <!-- ===== NODES LIST ===== -->
+    <div class="panel">
+        <div class="panel-title">📍 NODES (click to select)</div>
+        <div id="nodeList" class="node-list"></div>
+        <button id="btnAddNode" style="margin-top:8px; width:100%;">➕ Add New Node</button>
+    </div>
+    
+    <!-- ===== ROADS LIST ===== -->
+    <div class="panel">
+        <div class="panel-title">🛣️ ROADS (click to select)</div>
+        <div id="routeList" class="route-list"></div>
+        <div class="flex-row" style="margin-top:8px;">
+            <button id="btnClearRoutes" class="danger-btn" style="flex:1;">🗑️ Clear All</button>
+            <button id="btnResetMap" style="flex:1;">🔄 Reset KZN</button>
+        </div>
+    </div>
+    
+    <!-- ===== EXPORT ===== -->
+    <div class="panel">
+        <div class="panel-title">📋 EXPORT LUA CODE</div>
+        <div class="code-preview" id="codePreview">// Click Export to generate code</div>
+        <button id="btnExport" class="success-btn" style="margin-top:8px; width:100%;">📋 Copy to Clipboard</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    const width = 800, height = 800;
+    
+    // Data
+    let nodes = [];
+    let routes = [];
+    let nextId = 25;
+    let selectedNodeId = null;
+    let selectedRouteKey = null;
+    let dragTarget = null;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    
+    function routeKey(from, to) {
+        return Math.min(from, to) + "," + Math.max(from, to);
+    }
+    
+    function findRouteByKey(key) {
+        const [a,b] = key.split(',').map(Number);
+        return routes.find(r => (r.from === a && r.to === b) || (r.from === b && r.to === a));
+    }
+    
+    function updateDropdowns() {
+        const fromSelect = document.getElementById('connectFrom');
+        const toSelect = document.getElementById('connectTo');
+        
+        fromSelect.innerHTML = '<option value="">-- From Node --</option>';
+        toSelect.innerHTML = '<option value="">-- To Node --</option>';
+        
+        nodes.sort((a,b) => a.id - b.id);
+        nodes.forEach(node => {
+            fromSelect.innerHTML += `<option value="${node.id}">${node.id}: ${node.name}</option>`;
+            toSelect.innerHTML += `<option value="${node.id}">${node.id}: ${node.name}</option>`;
+        });
+    }
+    
+    // Connect nodes manually
+    function connectNodes() {
+        const fromVal = document.getElementById('connectFrom').value;
+        const toVal = document.getElementById('connectTo').value;
+        
+        if (!fromVal || !toVal) {
+            document.getElementById('statusMsg').innerHTML = "⚠️ Select both FROM and TO nodes";
+            return;
+        }
+        
+        const from = parseInt(fromVal);
+        const to = parseInt(toVal);
+        
+        if (from === to) {
+            document.getElementById('statusMsg').innerHTML = "⚠️ Cannot connect a node to itself";
+            return;
+        }
+        
+        const key = routeKey(from, to);
+        const existing = findRouteByKey(key);
+        
+        if (existing) {
+            document.getElementById('statusMsg').innerHTML = `⚠️ Road ${from}↔${to} already exists! Use Remove button first.`;
+        } else {
+            routes.push({ from: from, to: to, obstacle: null });
+            document.getElementById('statusMsg').innerHTML = `✅ Added road ${from} ↔ ${to}`;
+            updateRouteList();
+            draw();
+        }
+    }
+    
+    function disconnectNodes() {
+        const fromVal = document.getElementById('connectFrom').value;
+        const toVal = document.getElementById('connectTo').value;
+        
+        if (!fromVal || !toVal) {
+            document.getElementById('statusMsg').innerHTML = "⚠️ Select both FROM and TO nodes";
+            return;
+        }
+        
+        const from = parseInt(fromVal);
+        const to = parseInt(toVal);
+        const key = routeKey(from, to);
+        
+        routes = routes.filter(r => !(r.from === from && r.to === to) && !(r.from === to && r.to === from));
+        if (selectedRouteKey === key) selectedRouteKey = null;
+        
+        document.getElementById('statusMsg').innerHTML = `❌ Removed road ${from} ↔ ${to}`;
+        updateRouteList();
+        draw();
+    }
+    
+    function updateSelectedRoute() {
+        if (!selectedRouteKey) {
+            document.getElementById('statusMsg').innerHTML = "⚠️ Click a road in the list first";
+            return;
+        }
+        const route = findRouteByKey(selectedRouteKey);
+        if (route) {
+            const obs = document.getElementById('routeObstacle').value;
+            route.obstacle = (obs === "nil" ? null : obs);
+            document.getElementById('statusMsg').innerHTML = `✅ Updated road ${route.from}↔${route.to} → ${route.obstacle || "none"}`;
+            updateRouteList();
+            draw();
+        }
+    }
+    
+    function selectRoute(key) {
+        selectedRouteKey = key;
+        selectedNodeId = null;
+        const route = findRouteByKey(key);
+        if (route) {
+            document.getElementById('selectedRouteInfo').innerHTML = `Selected: ${route.from} ↔ ${route.to}`;
+            const obsVal = route.obstacle || "nil";
+            document.getElementById('routeObstacle').value = obsVal;
+        }
+        updateNodeList();
+        updateRouteList();
+        draw();
+    }
+    
+    function selectNode(id) {
+        selectedNodeId = id;
+        selectedRouteKey = null;
+        const node = nodes.find(n => n.id === id);
+        if (node) {
+            document.getElementById('nodeName').value = node.name;
+            document.getElementById('nodeCustomers').value = node.customers;
+            document.getElementById('selectedRouteInfo').innerHTML = "No road selected";
+        }
+        updateNodeList();
+        updateRouteList();
+        draw();
+    }
+    
+    function updateNode(node) {
+        if (!selectedNodeId) return;
+        const n = nodes.find(n => n.id === selectedNodeId);
+        if (n) {
+            n.name = document.getElementById('nodeName').value;
+            n.customers = parseInt(document.getElementById('nodeCustomers').value);
+            updateDropdowns();
+            updateNodeList();
+            draw();
+            document.getElementById('statusMsg').innerHTML = `✅ Updated node ${n.id}: ${n.name}`;
+        }
+    }
+    
+    function deleteNode() {
+        if (!selectedNodeId) return;
+        const id = selectedNodeId;
+        nodes = nodes.filter(n => n.id !== id);
+        routes = routes.filter(r => r.from !== id && r.to !== id);
+        if (selectedNodeId === id) selectedNodeId = nodes.length ? nodes[0]?.id : null;
+        selectedRouteKey = null;
+        updateDropdowns();
+        updateNodeList();
+        updateRouteList();
+        draw();
+        document.getElementById('statusMsg').innerHTML = `🗑️ Deleted node ${id}`;
+    }
+    
+    function addNode() {
+        const newId = nextId++;
+        nodes.push({
+            id: newId,
+            name: `Town${newId}`,
+            x: 400 + (Math.random() - 0.5) * 150,
+            y: 400 + (Math.random() - 0.5) * 150,
+            customers: 1
+        });
+        selectedNodeId = newId;
+        updateDropdowns();
+        updateNodeList();
+        updateRouteList();
+        draw();
+        document.getElementById('statusMsg').innerHTML = `➕ Added node ${newId}`;
+    }
+    
+    function updateNodeList() {
+        const container = document.getElementById('nodeList');
+        container.innerHTML = '';
+        nodes.sort((a,b) => a.id - b.id);
+        nodes.forEach(node => {
+            const div = document.createElement('div');
+            div.className = `node-item ${selectedNodeId === node.id ? 'selected-node' : ''}`;
+            div.innerHTML = `<strong>${node.id}</strong> ${node.name} (${node.customers}🧑) @ (${Math.round(node.x)},${Math.round(node.y)})`;
+            div.onclick = () => selectNode(node.id);
+            container.appendChild(div);
+        });
+    }
+    
+    function updateRouteList() {
+        const container = document.getElementById('routeList');
+        container.innerHTML = '';
+        routes.forEach(route => {
+            const key = routeKey(route.from, route.to);
+            let badge = '';
+            if (route.obstacle === 'NK') badge = '<span class="badge badge-NK">NKABI</span>';
+            else if (route.obstacle === 'SNK') badge = '<span class="badge badge-SNK">SUPER</span>';
+            else if (route.obstacle === 'POL') badge = '<span class="badge badge-POL">POLICE</span>';
+            else badge = '<span class="badge badge-clean">clean</span>';
+            
+            const div = document.createElement('div');
+            div.className = `route-item ${selectedRouteKey === key ? 'selected-route' : ''}`;
+            div.innerHTML = `<strong>${route.from} → ${route.to}</strong> ${badge}`;
+            div.onclick = () => selectRoute(key);
+            container.appendChild(div);
+        });
+    }
+    
+    // Drawing
+    function getObstacleColor(obstacle) {
+        if (obstacle === "NK") return "#ff66aa";
+        if (obstacle === "SNK") return "#ff4444";
+        if (obstacle === "POL") return "#4488ff";
+        return "#8844cc";
+    }
+    
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        // Grid
+        ctx.strokeStyle = "#1a1a2a";
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i < width; i += 50) {
+            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, height); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(width, i); ctx.stroke();
+        }
+        
+        // Draw roads
+        routes.forEach(route => {
+            const fromNode = nodes.find(n => n.id === route.from);
+            const toNode = nodes.find(n => n.id === route.to);
+            if (!fromNode || !toNode) return;
+            ctx.beginPath();
+            ctx.moveTo(fromNode.x, fromNode.y);
+            ctx.lineTo(toNode.x, toNode.y);
+            const isSelected = selectedRouteKey === routeKey(route.from, route.to);
+            ctx.strokeStyle = getObstacleColor(route.obstacle);
+            ctx.lineWidth = isSelected ? 5 : 3;
+            ctx.stroke();
+            
+            if (route.obstacle) {
+                const mx = (fromNode.x + toNode.x)/2;
+                const my = (fromNode.y + toNode.y)/2;
+                ctx.fillStyle = "white";
+                ctx.font = "bold 12px monospace";
+                ctx.fillText(route.obstacle, mx-8, my-6);
+            }
+        });
+        
+        // Draw nodes
+        nodes.forEach(node => {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 14, 0, Math.PI*2);
+            ctx.fillStyle = selectedNodeId === node.id ? "#ff88ff" : "#3a2a5a";
+            ctx.fill();
+            ctx.strokeStyle = "#b84aff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = "white";
+            ctx.font = "bold 14px monospace";
+            ctx.fillText(node.id, node.x-6, node.y-8);
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#ccc";
+            ctx.fillText(node.name.substring(0,8), node.x-20, node.y+20);
+            if (node.customers > 0) {
+                ctx.fillStyle = "#ffaa44";
+                ctx.beginPath();
+                ctx.arc(node.x+12, node.y-10, 8, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.fillText(node.customers, node.x+8, node.y-7);
+            }
+        });
+    }
+    
+    // Mouse drag for nodes
+    function getMousePos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
+        };
+    }
+    
+    function handleMouseDown(e) {
+        const { x, y } = getMousePos(e);
+        for (let i = nodes.length-1; i >= 0; i--) {
+            const n = nodes[i];
+            if (Math.hypot(x - n.x, y - n.y) < 18) {
+                dragTarget = n;
+                dragOffsetX = n.x - x;
+                dragOffsetY = n.y - y;
+                selectNode(n.id);
+                return;
+            }
+        }
+    }
+    
+    function handleMouseMove(e) {
+        if (!dragTarget) return;
+        const { x, y } = getMousePos(e);
+        dragTarget.x = Math.min(width-15, Math.max(15, x + dragOffsetX));
+        dragTarget.y = Math.min(height-15, Math.max(15, y + dragOffsetY));
+        updateNodeList();
+        draw();
+    }
+    
+    function handleMouseUp() {
+        dragTarget = null;
+    }
+    
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    
+    // Default KZN Map
+    function initKZNMap() {
+        nodes = [
+            { id: 1, name: "Jozini", x: 620, y: 80, customers: 1 },
+            { id: 2, name: "Pongola", x: 460, y: 110, customers: 2 },
+            { id: 3, name: "Vryheid", x: 280, y: 140, customers: 3 },
+            { id: 4, name: "Newcastle", x: 130, y: 120, customers: 1 },
+            { id: 5, name: "Dundee", x: 210, y: 210, customers: 2 },
+            { id: 6, name: "Ladysmith", x: 100, y: 390, customers: 3 },
+            { id: 7, name: "Estcourt", x: 115, y: 490, customers: 2 },
+            { id: 8, name: "Mooi River", x: 190, y: 380, customers: 1 },
+            { id: 9, name: "Pietermaritzburg", x: 270, y: 540, customers: 5 },
+            { id: 10, name: "Durban", x: 680, y: 610, customers: 5 },
+            { id: 11, name: "Stanger", x: 610, y: 510, customers: 2 },
+            { id: 12, name: "Empangeni", x: 590, y: 350, customers: 3 },
+            { id: 13, name: "Richards Bay", x: 680, y: 320, customers: 4 },
+            { id: 14, name: "Eshowe", x: 490, y: 400, customers: 2 },
+            { id: 15, name: "Melmoth", x: 410, y: 310, customers: 2 },
+            { id: 16, name: "Ulundi", x: 390, y: 220, customers: 3 },
+            { id: 17, name: "Nongoma", x: 500, y: 180, customers: 3 },
+            { id: 18, name: "Hluhluwe", x: 610, y: 220, customers: 2 },
+            { id: 19, name: "Mkuze", x: 560, y: 135, customers: 1 },
+            { id: 20, name: "Port Shepstone", x: 480, y: 690, customers: 3 },
+            { id: 21, name: "Margate", x: 570, y: 740, customers: 2 },
+            { id: 22, name: "Port Edward", x: 420, y: 750, customers: 1 },
+            { id: 23, name: "Harding", x: 310, y: 690, customers: 2 },
+            { id: 24, name: "Kokstad", x: 160, y: 710, customers: 2 }
+        ];
+        
+        routes = [
+            { from: 1, to: 2, obstacle: null }, { from: 1, to: 19, obstacle: null },
+            { from: 2, to: 3, obstacle: null }, { from: 2, to: 17, obstacle: null },
+            { from: 3, to: 4, obstacle: "POL" }, { from: 3, to: 5, obstacle: null },
+            { from: 3, to: 16, obstacle: null }, { from: 4, to: 5, obstacle: null },
+            { from: 5, to: 6, obstacle: null }, { from: 5, to: 8, obstacle: null },
+            { from: 6, to: 7, obstacle: null }, { from: 6, to: 8, obstacle: "SNK" },
+            { from: 7, to: 9, obstacle: null }, { from: 8, to: 9, obstacle: "NK" },
+            { from: 9, to: 14, obstacle: null }, { from: 9, to: 23, obstacle: null },
+            { from: 14, to: 15, obstacle: null }, { from: 15, to: 12, obstacle: "POL" },
+            { from: 12, to: 13, obstacle: null }, { from: 13, to: 10, obstacle: "POL" },
+            { from: 11, to: 10, obstacle: null }, { from: 11, to: 12, obstacle: null },
+            { from: 10, to: 21, obstacle: null }, { from: 20, to: 21, obstacle: "NK" },
+            { from: 20, to: 10, obstacle: "SNK" }, { from: 20, to: 23, obstacle: null },
+            { from: 21, to: 22, obstacle: "POL" }, { from: 22, to: 23, obstacle: null },
+            { from: 23, to: 24, obstacle: null }, { from: 24, to: 7, obstacle: null },
+            { from: 9, to: 11, obstacle: null }
+        ];
+        nextId = 25;
+    }
+    
+    function exportLua() {
+        let lua = "-- AUTO-GENERATED FROM MAP EDITOR\n\nlocal nodes = {\n";
+        nodes.forEach(n => {
+            lua += `    {id=${n.id}, name="${n.name}", x=${Math.round(n.x)}, y=${Math.round(n.y)}, customers=${n.customers}},\n`;
+        });
+        lua += "}\n\nlocal routes = {\n";
+        routes.forEach(r => {
+            const obs = r.obstacle ? `"${r.obstacle}"` : "nil";
+            lua += `    {from=${r.from}, to=${r.to}, obstacle=${obs}, cleared=false},\n`;
+        });
+        lua += "}\n\nlocal NODE_CUSTOMERS = {\n";
+        nodes.forEach(n => {
+            lua += `    [${n.id}]=${n.customers},\n`;
+        });
+        lua += "}\n\nreturn { nodes = nodes, routes = routes, node_customers = NODE_CUSTOMERS }\n";
+        
+        document.getElementById('codePreview').innerText = lua;
+        navigator.clipboard.writeText(lua);
+        document.getElementById('statusMsg').innerHTML = "✅ Lua code copied! Paste into main.lua";
+    }
+    
+    // Wire buttons
+    document.getElementById('btnConnect').onclick = connectNodes;
+    document.getElementById('btnDisconnect').onclick = disconnectNodes;
+    document.getElementById('btnUpdateRoute').onclick = updateSelectedRoute;
+    document.getElementById('btnUpdateNode').onclick = () => updateNode();
+    document.getElementById('btnDeleteNode').onclick = deleteNode;
+    document.getElementById('btnAddNode').onclick = addNode;
+    document.getElementById('btnClearRoutes').onclick = () => { routes = []; selectedRouteKey = null; updateRouteList(); draw(); };
+    document.getElementById('btnResetMap').onclick = () => { initKZNMap(); selectedNodeId = 1; selectedRouteKey = null; updateDropdowns(); updateNodeList(); updateRouteList(); draw(); };
+    document.getElementById('btnExport').onclick = exportLua;
+    
+    // Initialize
+    initKZNMap();
+    selectedNodeId = 1;
+    updateDropdowns();
+    updateNodeList();
+    updateRouteList();
+    draw();
+</script>
+</body>
+</html>
