@@ -1,4 +1,4 @@
-import random 
+
 import pygame
 import sys
 import math
@@ -12,7 +12,7 @@ WIN_W, WIN_H   = 1280, 720
 SIDEBAR_W      = 270
 MAP_W          = WIN_W - SIDEBAR_W
 MAP_H          = WIN_H
-TURN_TIME      = 30.0   # seconds per turn
+TURN_TIME      = 15.0   # seconds per turn
 
 #
 # COLOUR PALETTE
@@ -26,7 +26,7 @@ C = {
     'panel_light':   (32, 26, 58),
 
     # Accent (hot pink magenta brand colour) 
-    'accent':        (220,  20, 180),
+    'accent':        (220,  20, 1),
     'accent_dim':    (110,  10,  90),
     'accent_glow':   (255,  60, 210),
 
@@ -55,7 +55,7 @@ C = {
     'super_nkabi':   (230,  40,  40),   # red
     'police':        ( 60, 150, 255),   # blue
 
-    # Misc(255, 200, 80)
+    # Misc
     'gold':          (255, 200,   0),
     'timer_safe':    ( 40, 210,  80),
     'timer_warn':    (255, 190,   0),
@@ -179,8 +179,6 @@ ROUTES_DATA = [
 MODE_PVP      = 'pvp'        # Human vs Human
 MODE_TRAINING = 'training'   # Headless ML training (no window)
 MODE_ML_VS    = 'ml_vs'      # ML agent vs Human (future)
-MODE_HUMAN_P1 = 'human_p1'   # Human plays as P1, AI plays as P2
-MODE_HUMAN_P2 = 'human_p2'   # Human plays as P2, AI plays as P1
 
 
 # HELPER FUNCTIONS
@@ -246,9 +244,7 @@ class MenuScreen:
     """Standalone main menu rendered before the game starts."""
 
     ITEMS = [
-        ('Solo Play  (Human vs Human)',   MODE_PVP),
-        ('Play vs AI  (you = P1)',        MODE_HUMAN_P1),
-        ('Play vs AI  (you = P2)',        MODE_HUMAN_P2),
+        ('Solo Play  (Human vs Human)',  MODE_PVP),
         ('ML Training  (headless)',       MODE_TRAINING),
         ('ML vs Human  (coming soon)',    MODE_ML_VS),
         ('Exit',                          'exit'),
@@ -396,11 +392,8 @@ class GameEngine:
         for r in self.routes:
             r['cleared'] = False
 
-        # Randomise starting positions: pick two distinct nodes uniformly at random.
-        # This prevents the agent from memorising fixed opening sequences and
-        # forces it to learn positional reasoning that generalises across games.
-        self.p1_pos, self.p2_pos = random.sample([n['id'] for n in self.nodes], 2)
-        
+        self.p1_pos       = 1
+        self.p2_pos       = 24
         self.p1_score     = 0
         self.p2_score     = 0
         self.current_player = 1
@@ -410,16 +403,6 @@ class GameEngine:
         self.move_count   = 0
         self.trail_p1     = deque(maxlen=6)
         self.trail_p2     = deque(maxlen=6)
-
-        # Region ownership tracking.
-        # node_owner[node_id] = 0 (unclaimed), 1 (P1), or 2 (P2)
-        #   — updated to current_player whenever that player collects > 0
-        #     customers from a node.
-        # region_owner[region_key] = 0 / 1 / 2
-        #   — set to player N when ALL nodes in the region have node_owner == N,
-        #     reset to 0 if any node in the region flips to the opponent.
-        self.node_owner   = {n['id']: 0 for n in self.nodes}
-        self.region_owner = {reg['key']: 0 for reg in REGIONS}
 
         self._update_valid_moves()
         return self.get_state()
@@ -439,8 +422,6 @@ class GameEngine:
             'routes_cleared': {f"{r['from']}-{r['to']}": r['cleared'] for r in self.routes},
             'game_over':    self.game_over,
             'winner':       self.winner,
-            'node_owner':   self.node_owner.copy(),
-            'region_owner': self.region_owner.copy(),
         }
 
     def _update_valid_moves(self):
@@ -483,39 +464,6 @@ class GameEngine:
         self.turn_blocked[player] = True
         return f"POLICE! P{player} skips next turn!"
 
-    def _refresh_region_for_node(self, node_id):
-        """
-        Recompute region ownership for the region containing `node_id`.
-
-        Returns the player number (1 or 2) if a region was *newly* claimed
-        on this update, otherwise 0. "Newly claimed" means the region's
-        owner changed from {0 or opponent} to the player who just collected.
-
-        Implements the design-doc rule: a region is owned by player N when
-        every node in that region has been collected by N. If the opponent
-        collects from any node, ownership transfers (or is lost).
-        """
-        reg = NODE_REGION.get(node_id)
-        if reg is None:
-            return 0
-
-        rkey = reg['key']
-        owners = [self.node_owner[nid] for nid in reg['nodes']]
-        previous = self.region_owner[rkey]
-
-        # Region is owned iff all nodes share the same non-zero owner
-        if owners and all(o == owners[0] and o != 0 for o in owners):
-            new_owner = owners[0]
-        else:
-            new_owner = 0
-
-        self.region_owner[rkey] = new_owner
-
-        # Only count it as a "claim event" if ownership changed *to* a player
-        if new_owner != 0 and new_owner != previous:
-            return new_owner
-        return 0
-
     def _check_win(self):
         if self.p1_score >= self.WIN_SCORE:
             self.game_over = True
@@ -541,8 +489,7 @@ class GameEngine:
           }
         """
         R = {'ok': False, 'msg': '', 'msg_type': 'info',
-             'flash': None, 'gained': 0, 'obstacle': None, 'snk_target': None,
-             'region_claimed_by': 0}
+             'flash': None, 'gained': 0, 'obstacle': None, 'snk_target': None}
 
         if self.game_over:
             R['msg'] = "Game already over."
@@ -609,18 +556,10 @@ class GameEngine:
             else:
                 self.p2_score += gained
             R['gained'] = gained
-            # Mark this node as owned by the collecting player
-            self.node_owner[target_id] = cp
             reg   = NODE_REGION.get(target_id)
             rname = f" [{reg['name']}]" if reg else ""
             R['msg']      = f"P{cp} +{gained} pts \u00b7 {node['name']}{rname}"
             R['msg_type'] = 'good'
-
-            # Re-evaluate region ownership for the region this node belongs to.
-            # A region is "owned" by player N iff every node in the region has
-            # node_owner == N. We also detect *changes* of ownership so the
-            # reward function can give a one-off bonus.
-            R['region_claimed_by'] = self._refresh_region_for_node(target_id)
         else:
             R['msg']      = f"P{cp} moved to {node['name']}"
             R['msg_type'] = 'info'
@@ -665,25 +604,12 @@ class GameEngine:
 class TaxiWarsGame:
     """Renders the game and forwards input to GameEngine."""
 
-    def __init__(self, screen, fonts, mode=MODE_PVP, agent=None, human_player=None):
+    def __init__(self, screen, fonts, mode=MODE_PVP):
         self.screen  = screen
         self.fonts   = fonts
         self.mode    = mode
         self.engine  = GameEngine()
         self.ms, self.mox, self.moy = compute_transform()
-
-        # AI opponent (None in pure PvP mode)
-        # When set, `agent` is a trained QLearningAgent and `human_player`
-        # is 1 or 2 — indicating which side the human controls.
-        # The AI plays whichever side is NOT the human.
-        self.agent        = agent
-        self.human_player = human_player
-        self.ai_player    = (3 - human_player) if human_player else None
-        # Timestamp (in seconds since game start) of when the current AI
-        # turn became "ready to move". Used to enforce a 1s thinking pause.
-        self.ai_turn_started_at = None
-        self.ai_think_delay     = 3.0   # seconds of "thinking" before the AI moves
-        self._game_time         = 0.0   # accumulated dt for AI timing
 
         #  visual state 
         self.anim_t     = 0.0
@@ -700,13 +626,7 @@ class TaxiWarsGame:
         self.turn_time_left = TURN_TIME
         self.timer_active   = True   # paused when game over / blocked
 
-        if self.agent is not None:
-            who = "P1" if self.human_player == 1 else "P2"
-            self._show_msg(
-                f"You are {who}.  AI thinks for ~1s before moving.", "info", 4.0)
-        else:
-            self._show_msg("P1 starts at Jozini  \u00b7  P2 starts at Kokstad",
-                           "info", 4.0)
+        self._show_msg("P1 starts at Jozini  \u00b7  P2 starts at Kokstad", "info", 4.0)
 
     #  internal helpers 
 
@@ -738,7 +658,6 @@ class TaxiWarsGame:
         if event.type == pygame.QUIT:
             return False
 
-        # Always-allowed keys (menu, restart) even on the AI's turn
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return 'menu'          # back to menu
@@ -746,18 +665,12 @@ class TaxiWarsGame:
             if event.key == pygame.K_r:
                 e.reset()
                 self.node_flash.clear()
-                self.number_input   = ""
+                self.number_input  = ""
                 self.turn_time_left = TURN_TIME
-                self.ai_turn_started_at = None
                 self._show_msg("New game!  P1 at Jozini  \u00b7  P2 at Kokstad", "info", 4.0)
                 return True
 
             if e.game_over:
-                return True
-
-            # In PvAI mode, ignore move input while it's the AI's turn.
-            # The human's keyboard should only affect their own turns.
-            if self.agent is not None and e.current_player == self.ai_player:
                 return True
 
             if event.unicode.isdigit():
@@ -789,8 +702,7 @@ class TaxiWarsGame:
             self.input_timer  = 0.0
 
     def update(self, dt):
-        self.anim_t      += dt
-        self._game_time  += dt
+        self.anim_t += dt
 
         # Message fade
         if self.msg_timer > 0:
@@ -809,29 +721,8 @@ class TaxiWarsGame:
         for k in list(self.node_flash):
             self.node_flash[k] -= dt
 
+        # Countdown timer
         e = self.engine
-
-        # ── AI turn (PvAI only) ────────────────────────────────────────────
-        # If we have an AI and it's its turn, count down the thinking delay
-        # and then make a move. The countdown timer is paused while the
-        # AI thinks so the human isn't punished for the AI's pause.
-        if (self.agent is not None
-                and not e.game_over
-                and e.current_player == self.ai_player):
-            if self.ai_turn_started_at is None:
-                # First frame of this AI turn — start the thinking clock.
-                self.ai_turn_started_at = self._game_time
-            elif self._game_time - self.ai_turn_started_at >= self.ai_think_delay:
-                # Enough time has passed — let the AI play.
-                self._take_ai_turn()
-                self.ai_turn_started_at = None
-            # Don't run the countdown timer while the AI is thinking.
-            return
-        else:
-            # Either we're in PvP, or it's the human's turn in PvAI.
-            self.ai_turn_started_at = None
-
-        # Countdown timer (human players only)
         if not e.game_over and self.timer_active:
             self.turn_time_left -= dt
             if self.turn_time_left <= 0:
@@ -845,35 +736,6 @@ class TaxiWarsGame:
                 e.current_player = 3 - e.current_player
                 e._update_valid_moves()
                 self.turn_time_left = TURN_TIME
-
-    def _take_ai_turn(self):
-        """Ask the loaded Q-learning agent for a move and execute it."""
-        # Local imports so this file still works if state_encoder isn't on
-        # the path (e.g. pure PvP usage on a fresh checkout)
-        from state_encoder import encode
-
-        e = self.engine
-        if e.game_over or not e.valid_moves:
-            return
-
-        # Encode the current state from the AI's perspective.
-        state_dict = e.get_state()
-        state_key  = encode(state_dict, perspective=self.ai_player)
-
-        # Pick the best action (greedy — no exploration in play mode).
-        try:
-            action = self.agent.choose_action(state_key, e.valid_moves,
-                                              greedy=True)
-        except Exception as ex:
-            self._show_msg(f"AI error: {ex}", "bad", 4.0)
-            return
-
-        if action is None:
-            return  # no moves available — engine will handle stalemate
-
-        # Apply the move just like a human turn would.
-        R = e.do_move(action)
-        self._handle_result(R)
 
     # ── rendering ─────────────────────────────────────────────────────────────
 
@@ -1337,59 +1199,6 @@ def build_fonts():
     }
 
 
-def _try_load_agent(screen, fonts, pkl_path="C:/home/claude/runs/run1/agent.pkl"):
-    """
-    Attempt to load a trained Q-learning agent from disk.
-
-    On success: return the QLearningAgent instance.
-    On failure: draw an on-screen error message for ~3 seconds, then
-                return None so the caller stays in the menu.
-    """
-    try:
-        from agent import QLearningAgent
-        return QLearningAgent.load(pkl_path)
-    except FileNotFoundError:
-        msg = [
-            "Trained agent not found:",
-            pkl_path,
-            "",
-            "Run training first:",
-            "    python train.py --episodes 10000",
-        ]
-    except Exception as ex:
-        msg = [
-            "Failed to load trained agent:",
-            str(ex),
-            "",
-            "Try re-running training:",
-            "    python train.py --episodes 10000",
-        ]
-
-    # Render the error message centred for ~3 seconds.
-    clock = pygame.time.Clock()
-    end_at = pygame.time.get_ticks() + 3000
-    while pygame.time.get_ticks() < end_at:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return None
-            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                return None
-        screen.fill(C['bg'])
-        title = fonts['win_title'].render("AI not available", True, (255, 200, 80))
-        screen.blit(title, (WIN_W // 2 - title.get_width() // 2, WIN_H // 3))
-        y = WIN_H // 3 + 90
-        for line in msg:
-            surf = fonts['menu_item'].render(line, True, C['text_faint'])
-            screen.blit(surf, (WIN_W // 2 - surf.get_width() // 2, y))
-            y += 36
-        hint = fonts['menu_hint'].render(
-            "(Returning to menu... press any key to skip)", True, C['text_dim'])
-        screen.blit(hint, (WIN_W // 2 - hint.get_width() // 2, WIN_H - 60))
-        pygame.display.flip()
-        clock.tick(60)
-    return None
-
-
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIN_W, WIN_H))
@@ -1418,20 +1227,6 @@ def main():
                     game  = TaxiWarsGame(screen, fonts, mode=MODE_PVP)
                     state = 'game'
                     menu.result = None
-                elif menu.result in (MODE_HUMAN_P1, MODE_HUMAN_P2):
-                    # Load the trained agent before creating the game so that
-                    # a missing/broken pkl doesn't leave us in a half-built
-                    # state. On error we just stay in the menu and show a
-                    # short message.
-                    requested = menu.result
-                    menu.result = None
-                    human_player = 1 if requested == MODE_HUMAN_P1 else 2
-                    agent_obj = _try_load_agent(screen, fonts)
-                    if agent_obj is not None:
-                        game = TaxiWarsGame(
-                            screen, fonts, mode=requested,
-                            agent=agent_obj, human_player=human_player)
-                        state = 'game'
                 elif menu.result == MODE_TRAINING:
                     # Headless training — placeholder message for now
                     # (the actual RL agent will plug in here in Part 2)
