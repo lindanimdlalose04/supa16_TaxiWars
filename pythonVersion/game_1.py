@@ -1,3 +1,4 @@
+import os
 import random 
 import pygame
 import sys
@@ -16,75 +17,96 @@ TURN_TIME      = 30.0   # seconds per turn
 
 #
 # COLOUR PALETTE
+#
+# Brand pink is reserved for menu/title accents.
+# In-game the map uses asphalt-grey roads with white lane-line dashes,
+# coloured taxis for players, and saturated regional colours for grouping.
 
 
 C = {
-    # Backgrounds 
-    'bg':            (10,  8, 22),
-    'panel':         (18, 14, 36),
-    'panel_border':  (50, 42, 80),
-    'panel_light':   (32, 26, 58),
+    # Backgrounds
+    'bg':            ( 14,  16,  28),   # deep navy
+    'bg_grid':       ( 28,  32,  48),
+    'panel':         ( 22,  24,  42),
+    'panel_border':  ( 60,  64,  96),
+    'panel_light':   ( 36,  40,  64),
 
-    # Accent (hot pink magenta brand colour) 
+    # Accent (hot pink magenta brand colour) — menu only
     'accent':        (220,  20, 180),
     'accent_dim':    (110,  10,  90),
     'accent_glow':   (255,  60, 210),
 
-    #  Players 
-    'p1':            ( 40, 230,  90),   # green
-    'p2':            (240,  90,  20),   # orange
+    # Players (P1 = cyan cab, P2 = hot-pink cab)
+    'p1':            ( 50, 200, 235),   # cyan
+    'p1_dark':       ( 20, 120, 150),
+    'p2':            (240,  90, 160),   # hot pink
+    'p2_dark':       (150,  40,  95),
 
-    #  Node base colours 
-    'node_fill':     (12,  10, 46),
-    'node_border':   (80,  70,120),
+    # Node base
+    'node_fill':     ( 30,  34,  56),
+    'node_border':   ( 90, 100, 140),
 
-    # Valid-move ring  (white)
-    'valid_ring':    (255, 255, 255),   # <-- key fix: no longer magenta
+    # Valid-move ring
+    'valid_ring':    (250, 240, 130),   # soft yellow — readable on asphalt
 
-    # Routes
-    'route_active':  (180,  10,145),
-    'route_used':    ( 55,  50, 80),
+    # Roads (replacing the magenta "route" lines)
+    'road_edge':     ( 32,  34,  44),   # darker shoulder/border
+    'road_fill':     ( 68,  72,  86),   # asphalt
+    'road_line':     (235, 220, 130),   # warm yellow lane markings
+    'road_used':     ( 44,  46,  58),   # darker dimmed used road
+    'road_used_line':( 90,  86,  72),   # dim used lane line
 
-    # text of UI
-    'white':         (255, 255, 255),
-    'text_dim':      (180, 170, 210),
-    'text_faint':    (100,  90,140),
+    # Text
+    'white':         (245, 245, 250),
+    'text_dim':      (190, 190, 215),
+    'text_faint':    (120, 120, 155),
 
     # Obstacle colours
-    'nkabi':         (255, 210,  10),   # gold/yellow
-    'super_nkabi':   (230,  40,  40),   # red
-    'police':        ( 60, 150, 255),   # blue
+    'nkabi':         (255, 200,  40),   # yellow
+    'super_nkabi':   (235,  60,  60),   # red
+    'police':        ( 70, 160, 255),   # blue
 
-    # Misc(255, 200, 80)
+    # Misc
     'gold':          (255, 200,   0),
-    'timer_safe':    ( 40, 210,  80),
+    'timer_safe':    ( 70, 220, 110),
     'timer_warn':    (255, 190,   0),
-    'timer_danger':  (230,  40,  40),
+    'timer_danger':  (235,  60,  60),
+    'taxi_window':   (180, 220, 255),
+    'taxi_outline':  ( 12,  14,  22),
 }
 
 
 # REGIONS sections
 
 REGIONS = [
+    # Northern Natal — the inland north. Gains Newcastle, Dundee, Ladysmith,
+    # Ulundi. A warm amber/ochre.
     {'key': 'northern_natal', 'name': 'Northern Natal',
-     'colour': (210, 130,  20),
-     'nodes': [1, 2, 3, 19, 18, 12, 13], 'lx': 630, 'ly': 120},
+     'colour': (224, 158,  58),
+     'nodes': [1, 2, 3, 19, 18, 4, 5, 6, 16], 'lx': 300, 'ly': 130},
 
+    # Midlands — the green agricultural belt. Gains Nongoma, Pietermaritzburg,
+    # Hammersdale; loses the northern towns to Northern Natal.
     {'key': 'midlands',       'name': 'Midlands',
-     'colour': ( 50, 160,  60),
-     'nodes': [4, 5, 6, 7, 8, 27, 28, 16], 'lx': 185, 'ly': 300},
+     'colour': ( 92, 178, 104),
+     'nodes': [7, 8, 27, 28, 17, 9, 25], 'lx': 250, 'ly': 350},
 
+    # North Coast — the coastal strip north of Durban. Gains Empangeni and
+    # Richards Bay. A warm coral red.
     {'key': 'north_coast',    'name': 'North Coast',
-     'colour': (190,  35,  50),
-     'nodes': [14, 15, 17, 11], 'lx': 555, 'ly': 350},
+     'colour': (214,  88,  92),
+     'nodes': [14, 15, 11, 12, 13], 'lx': 560, 'ly': 360},
 
+    # Durban Metro — the city. Gains Margate; loses PMB and Hammersdale to
+    # Midlands. A muted violet.
     {'key': 'durban',         'name': 'Durban Metro',
-     'colour': (120,  80, 200),
-     'nodes': [25, 9, 29, 10], 'lx': 510, 'ly': 510},
+     'colour': (146, 110, 214),
+     'nodes': [29, 10, 21], 'lx': 600, 'ly': 540},
 
+    # South Coast — the southern seaboard. Loses Margate.
     {'key': 'south_coast',    'name': 'South Coast',
-     'colour': ( 30,  90, 200),
-     'nodes': [30, 26, 23, 22, 24, 20, 21], 'lx': 370, 'ly': 665},
+     'colour': ( 70, 130, 210),
+     'nodes': [30, 26, 23, 22, 24, 20], 'lx': 300, 'ly': 665},
 ]
 
 NODE_REGION = {}
@@ -462,15 +484,37 @@ class GameEngine:
             self.p2_score = max(0, self.p2_score - 2)
         return f"NKABI! P{player} loses 2 points!"
 
-    def _apply_super_nkabi(self, player):
-        trail  = self.trail_p1 if player == 1 else self.trail_p2
-        steps  = min(3, len(trail))
-        if steps == 0:
+    def _apply_super_nkabi(self, player, came_from):
+        """
+        Send the mover back along their trail.
+
+        Intent: 'back 3 nodes' means three of the player's *prior* stops,
+        NOT counting the square they just departed from (otherwise 'back 3'
+        only feels like 'back 2' to a player — they expect to end up
+        somewhere they remember being, not at their immediately-previous
+        square).
+
+        Fallback when there is no prior history: send them back to their
+        starting town (Jozini for P1, Kokstad for P2). If a came_from
+        exists but there's no deeper history, we use came_from as a last
+        resort rather than teleporting to Jozini/Kokstad.
+        """
+        trail   = self.trail_p1 if player == 1 else self.trail_p2
+        history = list(trail)  # newest-first, does NOT include came_from
+        steps   = min(3, len(history))
+
+        if steps > 0:
+            target = history[steps - 1]
+            msg    = f"SUPER NKABI! P{player} sent back {steps} stops"
+        elif came_from is not None:
+            # No prior history — just bounce back to where they came from.
+            target = came_from
+            msg    = f"SUPER NKABI! P{player} bounced back"
+        else:
+            # Truly nothing — fall back to canonical start.
             target = 1 if player == 1 else 24
             msg    = f"SUPER NKABI! P{player} sent back to start!"
-        else:
-            target = trail[steps - 1]
-            msg    = f"SUPER NKABI! P{player} sent back {steps} nodes"
+
         if player == 1:
             self.p1_pos   = target
             self.p1_score = max(0, self.p1_score - 1)
@@ -587,19 +631,25 @@ class GameEngine:
             R['msg_type'] = 'bad'
             return R
 
-        # execute move
-        (self.trail_p1 if cp == 1 else self.trail_p2).appendleft(pos)
+        # Execute move (commit position change).
+        # IMPORTANT: we do NOT add `pos` to the trail yet — SNK needs to know
+        # where the player came from without it being double-counted, and if
+        # SNK fires the player gets teleported away anyway. The trail is
+        # updated at the end of this method once the final landing node
+        # is known.
         if cp == 1:
             self.p1_pos = target_id
         else:
             self.p2_pos = target_id
+        came_from = pos  # the node we stepped off of on this move
 
         route['cleared'] = True
         self.move_count += 1
         R['ok']    = True
         R['flash'] = target_id
 
-        # Collect customers
+        # Collect customers at the destination
+        gained_msg = ""
         node = find_node(self.nodes, target_id)
         if node['customers'] > 0:
             gained = node['customers']
@@ -613,8 +663,9 @@ class GameEngine:
             self.node_owner[target_id] = cp
             reg   = NODE_REGION.get(target_id)
             rname = f" [{reg['name']}]" if reg else ""
-            R['msg']      = f"P{cp} +{gained} pts \u00b7 {node['name']}{rname}"
-            R['msg_type'] = 'good'
+            gained_msg     = f"P{cp} +{gained} pts \u00b7 {node['name']}{rname}"
+            R['msg']       = gained_msg
+            R['msg_type']  = 'good'
 
             # Re-evaluate region ownership for the region this node belongs to.
             # A region is "owned" by player N iff every node in the region has
@@ -625,23 +676,36 @@ class GameEngine:
             R['msg']      = f"P{cp} moved to {node['name']}"
             R['msg_type'] = 'info'
 
-        # Obstacle
+        # Obstacle resolution. If both a customer gain AND an obstacle happened
+        # on the same move, combine them into one message so the player isn't
+        # left thinking only the obstacle happened.
         obs = route['obstacle']
         R['obstacle'] = obs
+        snk_fired = False
         if obs == 'NK':
             obs_msg       = self._apply_nkabi(cp)
-            R['msg']      = obs_msg
+            R['msg']      = f"{gained_msg}  \u2014  {obs_msg}" if gained_msg else obs_msg
             R['msg_type'] = 'bad'
         elif obs == 'SNK':
-            obs_msg, snk_t = self._apply_super_nkabi(cp)
-            R['msg']        = obs_msg
+            obs_msg, snk_t = self._apply_super_nkabi(cp, came_from=came_from)
+            R['msg']        = f"{gained_msg}  \u2014  {obs_msg}" if gained_msg else obs_msg
             R['msg_type']   = 'bad'
             R['flash']      = snk_t
             R['snk_target'] = snk_t
+            snk_fired       = True
         elif obs == 'POL':
             obs_msg       = self._apply_police(cp)
-            R['msg']      = obs_msg
+            R['msg']      = f"{gained_msg}  \u2014  {obs_msg}" if gained_msg else obs_msg
             R['msg_type'] = 'warn'
+
+        # Now update the trail. If SNK fired, the player got teleported
+        # somewhere else entirely; their trail jumps from `came_from` to the
+        # landing node without the intermediate hop. We still push
+        # `came_from` so the trail reflects where they were standing before
+        # this whole event.
+        # If no SNK, the player is sitting at `target_id` and `came_from` is
+        # the most recent step they came from.
+        (self.trail_p1 if cp == 1 else self.trail_p2).appendleft(came_from)
 
         # Win check
         if self._check_win():
@@ -892,68 +956,192 @@ class TaxiWarsGame:
     # ── grid background ───────────────────────────────────────────────────────
 
     def _draw_grid(self):
-        for gx in range(0, MAP_W, 40):
-            for gy in range(0, WIN_H, 40):
-                pygame.draw.rect(self.screen, (40, 32, 72), (gx - 1, gy - 1, 2, 2))
+        for gx in range(0, MAP_W, 48):
+            for gy in range(0, WIN_H, 48):
+                pygame.draw.rect(self.screen, C['bg_grid'], (gx - 1, gy - 1, 2, 2))
 
     # ── region labels ─────────────────────────────────────────────────────────
 
     def _draw_region_labels(self):
+        """
+        Region labels are drawn beneath the nodes (in z-order) at a low
+        alpha. We also skip labels that would overlap any node, so they
+        never visually 'collide' with town circles.
+        """
         font = self.fonts['region']
+        # Pre-compute node screen positions so we can avoid drawing labels on top
+        node_screen = [tp(n['x'], n['y'], self.ms, self.mox, self.moy)
+                       for n in self.engine.nodes]
+
         for reg in REGIONS:
             sx, sy = tp(reg['lx'], reg['ly'], self.ms, self.mox, self.moy)
-            if 10 < sx < MAP_W - 10 and 10 < sy < WIN_H - 10:
-                surf = font.render(reg['name'].upper(), True, reg['colour'])
-                surf.set_alpha(130)
-                self.screen.blit(surf, (sx - surf.get_width() // 2, sy))
+            if not (10 < sx < MAP_W - 10 and 10 < sy < WIN_H - 10):
+                continue
+            # Skip if any node is within 30px — keeps labels off taxi nodes
+            too_close = any((sx - nx) ** 2 + (sy - ny) ** 2 < 30 ** 2
+                            for nx, ny in node_screen)
+            if too_close:
+                continue
+            surf = font.render(reg['name'].upper(), True, reg['colour'])
+            surf.set_alpha(120)
+            self.screen.blit(surf, (sx - surf.get_width() // 2, sy))
 
     # ── obstacle symbol on a route ────────────────────────────────────────────
 
     def _draw_obstacle(self, obs, cx, cy):
-        r = 9
+        """Draw a road-sign style obstacle marker at the midpoint of a road."""
+        r = 11
         cx, cy = int(cx), int(cy)
-        pygame.draw.circle(self.screen, C['bg'], (cx, cy), r + 2)
+        # Dark backing so the sign stands out against the asphalt
+        pygame.draw.circle(self.screen, C['taxi_outline'], (cx, cy), r + 3)
         if obs == 'NK':
-            col  = C['nkabi']
-            sym  = 'N'
-            pts  = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
+            col, sym = C['nkabi'], 'N'
+            pts = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
             pygame.draw.polygon(self.screen, col, pts)
-            pygame.draw.polygon(self.screen, (0, 0, 0), pts, 1)
+            pygame.draw.polygon(self.screen, C['taxi_outline'], pts, 2)
         elif obs == 'SNK':
-            col = C['super_nkabi']
-            sym = 'S'
+            col, sym = C['super_nkabi'], 'S'
             pygame.draw.circle(self.screen, col, (cx, cy), r)
+            pygame.draw.circle(self.screen, C['taxi_outline'], (cx, cy), r, 2)
         elif obs == 'POL':
-            col = C['police']
-            sym = 'P'
-            pygame.draw.rect(self.screen, col, (cx - r, cy - r, r * 2, r * 2))
+            col, sym = C['police'], 'P'
+            pygame.draw.rect(self.screen, col, (cx - r, cy - r, r * 2, r * 2),
+                             border_radius=3)
+            pygame.draw.rect(self.screen, C['taxi_outline'],
+                             (cx - r, cy - r, r * 2, r * 2), 2, border_radius=3)
         else:
             return
-        txt = self.fonts['obs'].render(sym, True, (0, 0, 0))
-        self.screen.blit(txt, (cx - txt.get_width() // 2, cy - txt.get_height() // 2))
+        txt = self.fonts['obs'].render(sym, True, C['taxi_outline'])
+        self.screen.blit(txt, (cx - txt.get_width() // 2,
+                               cy - txt.get_height() // 2))
 
     # ── routes ────────────────────────────────────────────────────────────────
 
     def _draw_routes(self):
+        """
+        Render each route as a three-layer 'road':
+          1. dark shoulder/edge stripe (slightly wider)
+          2. asphalt fill (main width)
+          3. dashed yellow centre line
+
+        Cleared (used) routes use dimmed tones so the player can see at a
+        glance which segments have already been driven.
+        """
+        ms = self.ms
+        # Pre-compute screen positions for every node (small win)
+        pos_cache = {}
+        for n in self.engine.nodes:
+            pos_cache[n['id']] = tp(n['x'], n['y'], ms, self.mox, self.moy)
+
+        # Road widths scale gently with the map zoom so they look proportionate
+        edge_w = max(8, int(10 * ms / 1.0))
+        fill_w = max(6, edge_w - 2)
+
         for r in self.engine.routes:
-            a = find_node(self.engine.nodes, r['from'])
-            b = find_node(self.engine.nodes, r['to'])
-            if not a or not b:
+            if r['from'] not in pos_cache or r['to'] not in pos_cache:
                 continue
-            x1, y1 = tp(a['x'], a['y'], self.ms, self.mox, self.moy)
-            x2, y2 = tp(b['x'], b['y'], self.ms, self.mox, self.moy)
-            col = C['route_used'] if r['cleared'] else C['route_active']
-            pygame.draw.line(self.screen, col, (int(x1), int(y1)), (int(x2), int(y2)), 3)
+            x1, y1 = pos_cache[r['from']]
+            x2, y2 = pos_cache[r['to']]
+            p1 = (int(x1), int(y1))
+            p2 = (int(x2), int(y2))
+
+            if r['cleared']:
+                edge_col = C['road_edge']
+                fill_col = C['road_used']
+                line_col = C['road_used_line']
+            else:
+                edge_col = C['road_edge']
+                fill_col = C['road_fill']
+                line_col = C['road_line']
+
+            # Shoulder + asphalt
+            pygame.draw.line(self.screen, edge_col, p1, p2, edge_w)
+            pygame.draw.line(self.screen, fill_col, p1, p2, fill_w)
+
+            # Dashed centre line — skip drawing the dashes near the endpoints
+            # and around the obstacle marker so it doesn't look messy.
+            dx, dy = (x2 - x1), (y2 - y1)
+            length = math.hypot(dx, dy)
+            if length < 8:
+                continue
+            ux, uy = dx / length, dy / length
+
+            dash_len  = 9
+            gap_len   = 7
+            step      = dash_len + gap_len
+            # Stay clear of the node circle on each end
+            end_pad   = 18
+            obs_clear = 16 if r['obstacle'] and not r['cleared'] else 0
+
+            t = end_pad
+            mid = length / 2
+            while t + dash_len < length - end_pad:
+                # Skip dashes that would overlap the obstacle marker
+                if obs_clear and abs(t + dash_len / 2 - mid) < obs_clear:
+                    t += step
+                    continue
+                ax = x1 + ux * t
+                ay = y1 + uy * t
+                bx = x1 + ux * (t + dash_len)
+                by = y1 + uy * (t + dash_len)
+                pygame.draw.line(self.screen, line_col,
+                                 (int(ax), int(ay)), (int(bx), int(by)), 2)
+                t += step
+
+            # Obstacle marker on uncleared routes
             if r['obstacle'] and not r['cleared']:
-                mx = (x1 + x2) / 2
-                my = (y1 + y2) / 2
-                self._draw_obstacle(r['obstacle'], mx, my)
+                self._draw_obstacle(r['obstacle'],
+                                    (x1 + x2) / 2, (y1 + y2) / 2)
 
     # ── nodes ─────────────────────────────────────────────────────────────────
 
+    def _draw_taxi(self, cx, cy, body_col, body_dark, label):
+        """
+        Draw a small top-down taxi sprite centred at (cx, cy).
+
+        The taxi has a coloured body with a slightly darker outline, two
+        pale 'windows' (front/back), a yellow taxi sign on the roof, two
+        dark wheel arches on the sides, and a centred number plate.
+        Drawn on a per-call SRCALPHA surface so transparency works.
+        """
+        W, H = 30, 22
+        surf = pygame.Surface((W + 4, H + 4), pygame.SRCALPHA)
+        sx, sy = 2, 2  # padding inside the surface
+
+        # Wheel arches (darker body colour, drawn first so the body covers them)
+        pygame.draw.rect(surf, body_dark, (sx - 1, sy + 3, W + 2, 4))
+        pygame.draw.rect(surf, body_dark, (sx - 1, sy + H - 7, W + 2, 4))
+
+        # Body
+        body_rect = pygame.Rect(sx, sy, W, H)
+        pygame.draw.rect(surf, body_col, body_rect, border_radius=4)
+        pygame.draw.rect(surf, C['taxi_outline'], body_rect, 1, border_radius=4)
+
+        # Windows (front-left / back-right pair, top-down view)
+        win_col = C['taxi_window']
+        pygame.draw.rect(surf, win_col, (sx + 6, sy + 4, W - 12, 4), border_radius=1)
+        pygame.draw.rect(surf, win_col, (sx + 6, sy + H - 8, W - 12, 4), border_radius=1)
+
+        # Taxi roof sign (gold)
+        sign_w = 8
+        pygame.draw.rect(surf, C['gold'],
+                         (sx + W // 2 - sign_w // 2, sy + H // 2 - 2, sign_w, 4))
+        pygame.draw.rect(surf, C['taxi_outline'],
+                         (sx + W // 2 - sign_w // 2, sy + H // 2 - 2, sign_w, 4), 1)
+
+        # Player label (1 or 2) on the roof sign
+        lbl = self.fonts['marker'].render(str(label), True, C['taxi_outline'])
+        surf.blit(lbl,
+                  (sx + W // 2 - lbl.get_width() // 2,
+                   sy + H // 2 - lbl.get_height() // 2 - 1))
+
+        self.screen.blit(surf,
+                         (int(cx) - (W + 4) // 2,
+                          int(cy) - (H + 4) // 2))
+
     def _draw_nodes(self):
         e  = self.engine
-        NR = 15   # node radius
+        NR = 16   # node radius — slightly larger so customer badges sit better
         font_id   = self.fonts['node_id']
         font_name = self.fonts['node_name']
         font_cust = self.fonts['node_cust']
@@ -969,54 +1157,45 @@ class TaxiWarsGame:
             reg        = NODE_REGION.get(nid)
             reg_colour = reg['colour'] if reg else (100, 100, 100)
 
-            # ── valid-move pulse glow (white, alpha-based) ────────────────
-            if is_valid:
-                pulse = (math.sin(self.anim_t * 4) + 1) / 2
-                glow_r = NR + 8 + int(pulse * 4)
-                glow_surf = pygame.Surface((glow_r * 2 + 4, glow_r * 2 + 4), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surf, (*C['valid_ring'], int(30 + pulse * 30)),
-                                   (glow_r + 2, glow_r + 2), glow_r)
-                self.screen.blit(glow_surf, (sx - glow_r - 2, sy - glow_r - 2))
-
-            # ── flash effect ──────────────────────────────────────────────
+            # ── flash effect (gold halo, fades) ───────────────────────────
             if nid in self.node_flash:
                 fa = int((self.node_flash[nid] / 1.5) * 110)
-                fl_surf = pygame.Surface(((NR + 14) * 2, (NR + 14) * 2), pygame.SRCALPHA)
+                fl_surf = pygame.Surface(((NR + 16) * 2, (NR + 16) * 2),
+                                         pygame.SRCALPHA)
                 pygame.draw.circle(fl_surf, (*C['gold'], fa),
-                                   (NR + 14, NR + 14), NR + 14)
-                self.screen.blit(fl_surf, (sx - NR - 14, sy - NR - 14))
+                                   (NR + 16, NR + 16), NR + 16)
+                self.screen.blit(fl_surf, (sx - NR - 16, sy - NR - 16))
 
-            # ── region outer ring (always drawn) ──────────────────────────
-            pygame.draw.circle(self.screen, reg_colour, (sx, sy), NR + 4, 2)
+            # ── valid-move pulse glow (yellow ring) ───────────────────────
+            if is_valid:
+                pulse = (math.sin(self.anim_t * 4) + 1) / 2
+                glow_r = NR + 9 + int(pulse * 3)
+                glow_surf = pygame.Surface((glow_r * 2 + 4, glow_r * 2 + 4),
+                                           pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf,
+                                   (*C['valid_ring'], int(40 + pulse * 50)),
+                                   (glow_r + 2, glow_r + 2), glow_r)
+                self.screen.blit(glow_surf,
+                                 (sx - glow_r - 2, sy - glow_r - 2))
+
+            # ── region ring (subtle on normal nodes, brighter when valid) ─
+            ring_alpha = 220 if is_valid else 150
+            ring_surf = pygame.Surface(((NR + 5) * 2, (NR + 5) * 2),
+                                       pygame.SRCALPHA)
+            pygame.draw.circle(ring_surf, (*reg_colour, ring_alpha),
+                               (NR + 5, NR + 5), NR + 4, 2)
+            self.screen.blit(ring_surf, (sx - NR - 5, sy - NR - 5))
 
             # ── node fill ─────────────────────────────────────────────────
-            if is_p1:
-                fill_surf = pygame.Surface((NR * 2, NR * 2), pygame.SRCALPHA)
-                pygame.draw.circle(fill_surf, (*C['p1'], 60),
-                                   (NR, NR), NR)
-                self.screen.blit(fill_surf, (sx - NR, sy - NR))
-            elif is_p2:
-                fill_surf = pygame.Surface((NR * 2, NR * 2), pygame.SRCALPHA)
-                pygame.draw.circle(fill_surf, (*C['p2'], 60),
-                                   (NR, NR), NR)
-                self.screen.blit(fill_surf, (sx - NR, sy - NR))
-            else:
-                pygame.draw.circle(self.screen, C['node_fill'], (sx, sy), NR)
+            pygame.draw.circle(self.screen, C['node_fill'], (sx, sy), NR)
 
             # ── inner border ──────────────────────────────────────────────
-            # Player occupying → player colour ring
-            # Valid move        → bright white ring (distinct from region colour)
-            # Normal            → region colour ring (faint)
-            if is_p1:
-                pygame.draw.circle(self.screen, C['p1'], (sx, sy), NR, 3)
-            elif is_p2:
-                pygame.draw.circle(self.screen, C['p2'], (sx, sy), NR, 3)
-            elif is_valid:
-                # White dashed-look: two overlapping circles (thick white, thin bg)
-                pygame.draw.circle(self.screen, C['valid_ring'], (sx, sy), NR, 2)
-                pygame.draw.circle(self.screen, C['node_fill'],  (sx, sy), NR - 3, 1)
+            if is_valid:
+                pygame.draw.circle(self.screen, C['valid_ring'],
+                                   (sx, sy), NR, 2)
             else:
-                pygame.draw.circle(self.screen, reg_colour, (sx, sy), NR, 1)
+                pygame.draw.circle(self.screen, C['node_border'],
+                                   (sx, sy), NR, 1)
 
             # ── node ID ───────────────────────────────────────────────────
             id_txt = font_id.render(str(nid), True, C['white'])
@@ -1025,32 +1204,37 @@ class TaxiWarsGame:
 
             # ── town name ─────────────────────────────────────────────────
             name = node['name']
-            if len(name) > 11:
-                name = name[:10] + '~'
+            if len(name) > 12:
+                name = name[:11] + '~'
             nm_txt = font_name.render(name, True, C['white'])
-            nm_txt.set_alpha(200)
+            nm_txt.set_alpha(210)
+            # Soft dark backing for legibility on top of roads
+            nm_bg = pygame.Surface(
+                (nm_txt.get_width() + 6, nm_txt.get_height() + 2),
+                pygame.SRCALPHA)
+            nm_bg.fill((*C['bg'], 180))
+            self.screen.blit(nm_bg,
+                             (sx - nm_txt.get_width() // 2 - 3,
+                              sy + NR + 4))
             self.screen.blit(nm_txt, (sx - nm_txt.get_width() // 2,
-                                      sy + NR + 4))
+                                      sy + NR + 5))
 
             # ── customer badge ────────────────────────────────────────────
             if node['customers'] > 0:
-                bx, by = sx + NR - 1, sy - NR + 2
+                bx, by = sx + NR - 2, sy - NR + 2
                 pygame.draw.circle(self.screen, C['gold'], (bx, by), 9)
-                ct = font_cust.render(str(node['customers']), True, (0, 0, 0))
+                pygame.draw.circle(self.screen, C['taxi_outline'], (bx, by), 9, 1)
+                ct = font_cust.render(str(node['customers']),
+                                      True, C['taxi_outline'])
                 self.screen.blit(ct, (bx - ct.get_width() // 2,
                                       by - ct.get_height() // 2))
 
-            # ── player markers (dot above node) ───────────────────────────
+            # ── taxi sprite for the occupying player ──────────────────────
+            # Drawn AFTER the node so it sits visually on top of the town.
             if is_p1:
-                pygame.draw.circle(self.screen, C['p1'],
-                                   (sx - 6, sy - NR - 10), 7)
-                mk = self.fonts['marker'].render("1", True, (0, 0, 0))
-                self.screen.blit(mk, (sx - 10, sy - NR - 17))
+                self._draw_taxi(sx, sy - NR - 14, C['p1'], C['p1_dark'], 1)
             if is_p2:
-                pygame.draw.circle(self.screen, C['p2'],
-                                   (sx + 6, sy - NR - 10), 7)
-                mk = self.fonts['marker'].render("2", True, (0, 0, 0))
-                self.screen.blit(mk, (sx + 2, sy - NR - 17))
+                self._draw_taxi(sx, sy - NR - 14, C['p2'], C['p2_dark'], 2)
 
     # ── sidebar ───────────────────────────────────────────────────────────────
 
@@ -1088,7 +1272,8 @@ class TaxiWarsGame:
 
         # Score cards
         def score_card(player, score, cy):
-            pcol = C['p1'] if player == 1 else C['p2']
+            pcol  = C['p1']      if player == 1 else C['p2']
+            pdark = C['p1_dark'] if player == 1 else C['p2_dark']
             pos  = e.p1_pos if player == 1 else e.p2_pos
             pn   = find_node(e.nodes, pos)
             pname = pn['name'][:14] + '.' if pn and len(pn['name']) > 14 else (pn['name'] if pn else '?')
@@ -1100,6 +1285,9 @@ class TaxiWarsGame:
             card.fill((*pcol, 20))
             self.screen.blit(card, (px, cy))
             pygame.draw.rect(self.screen, pcol, (px, cy, pw, 80), 2, border_radius=6)
+
+            # Small taxi icon (top-right corner of the card)
+            self._draw_taxi(px + pw - 22, cy + 16, pcol, pdark, player)
 
             pl = self.fonts['score_label'].render(f"PLAYER {player}", True, pcol)
             self.screen.blit(pl, (px + 8, cy + 7))
@@ -1155,13 +1343,28 @@ class TaxiWarsGame:
             self.screen.blit(dt, (px + 18, oy + 12)); 
 
         obs_row(C['nkabi'],       'N', 'NKABI',       'lose 2 pts',    y); y += 28
-        obs_row(C['super_nkabi'], 'S', 'SUPER NKABI', 'back 3 nodes',  y); y += 28
-        obs_row(C['police'],      'P', 'POLICE',       'skip 1 turn',   y); y += 28
+        obs_row(C['super_nkabi'], 'S', 'SUPER NKABI', 'sent back 3',   y); y += 28
+        obs_row(C['police'],      'P', 'POLICE',      'skip 1 turn',   y); y += 28
 
-        # Used route line
-        pygame.draw.line(self.screen, C['route_used'], (px, y + 8), (px + 28, y + 8), 3)
-        ut = self.fonts['legend'].render("= used route", True, C['text_faint'])
-        self.screen.blit(ut, (px + 33, y + 3)); y += 22
+        # Mini road legend — show open vs used road samples
+        # Open road
+        pygame.draw.line(self.screen, C['road_edge'],
+                         (px, y + 7), (px + 28, y + 7), 6)
+        pygame.draw.line(self.screen, C['road_fill'],
+                         (px, y + 7), (px + 28, y + 7), 4)
+        pygame.draw.line(self.screen, C['road_line'],
+                         (px + 6, y + 7), (px + 13, y + 7), 1)
+        pygame.draw.line(self.screen, C['road_line'],
+                         (px + 17, y + 7), (px + 24, y + 7), 1)
+        ot = self.fonts['legend'].render("= open road", True, C['text_dim'])
+        self.screen.blit(ot, (px + 33, y + 2)); y += 16
+        # Used road (dimmed)
+        pygame.draw.line(self.screen, C['road_edge'],
+                         (px, y + 7), (px + 28, y + 7), 6)
+        pygame.draw.line(self.screen, C['road_used'],
+                         (px, y + 7), (px + 28, y + 7), 4)
+        ut = self.fonts['legend'].render("= used road", True, C['text_faint'])
+        self.screen.blit(ut, (px + 33, y + 2)); y += 18
 
         pygame.draw.rect(self.screen, C['accent'], (sx + 8, y, SIDEBAR_W - 16, 1)); y += 6
 
@@ -1256,16 +1459,34 @@ class TaxiWarsGame:
             col = C['nkabi']
         else:
             col = C['accent']
-        bx, by = 20, WIN_H - 52
+
         bw = MAP_W - 40
-        bg = pygame.Surface((bw, 36), pygame.SRCALPHA)
+        # If the message contains a separator we put it on two lines so
+        # combined customer-gain + obstacle messages stay readable.
+        font = self.fonts['msg']
+        sep = "  \u2014  "
+        if sep in self.message:
+            lines = [s.strip() for s in self.message.split(sep, 1)]
+            bh    = 52
+        else:
+            lines = [self.message]
+            bh    = 36
+
+        bx, by = 20, WIN_H - bh - 12
+        bg = pygame.Surface((bw, bh), pygame.SRCALPHA)
         bg.fill((*C['bg'], int(alpha * 230)))
         self.screen.blit(bg, (bx, by))
-        pygame.draw.rect(self.screen, (*col, int(alpha * 180)),
-                         (bx, by, bw, 36), 2, border_radius=6)
-        txt = self.fonts['msg'].render(self.message, True,
-                                       (*C['white'], int(alpha * 255)))
-        self.screen.blit(txt, (bx + (bw - txt.get_width()) // 2, by + 10))
+        pygame.draw.rect(self.screen, (*col, int(alpha * 200)),
+                         (bx, by, bw, bh), 2, border_radius=6)
+
+        line_h = font.get_height()
+        total_h = line_h * len(lines)
+        top = by + (bh - total_h) // 2
+        for i, line in enumerate(lines):
+            txt = font.render(line, True, (*C['white'], int(alpha * 255)))
+            self.screen.blit(txt,
+                             (bx + (bw - txt.get_width()) // 2,
+                              top + i * line_h))
 
     # ── game over overlay ─────────────────────────────────────────────────────
 
@@ -1337,35 +1558,62 @@ def build_fonts():
     }
 
 
-def _try_load_agent(screen, fonts, pkl_path="C:/home/claude/runs/run1/agent.pkl"):
+def _try_load_agent(screen, fonts, pkl_path=None):
     """
     Attempt to load a trained Q-learning agent from disk.
 
+    Looks in a list of likely locations relative to the script so the same
+    code works on Windows, macOS, and Linux without edits.
     On success: return the QLearningAgent instance.
     On failure: draw an on-screen error message for ~3 seconds, then
                 return None so the caller stays in the menu.
     """
     try:
         from agent import QLearningAgent
-        return QLearningAgent.load(pkl_path)
-    except FileNotFoundError:
-        msg = [
-            "Trained agent not found:",
-            pkl_path,
-            "",
-            "Run training first:",
-            "    python train.py --episodes 10000",
-        ]
     except Exception as ex:
+        agent_class_err = ex
+    else:
+        agent_class_err = None
+
+    # Candidate paths to try, in priority order.
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [pkl_path] if pkl_path else []
+    candidates += [
+        os.path.join(here, "runs", "run1", "agent.pkl"),
+        os.path.join(os.getcwd(), "runs", "run1", "agent.pkl"),
+        os.path.join(here, "agent.pkl"),
+    ]
+    candidates = [c for c in candidates if c]
+
+    if agent_class_err is None:
+        for path in candidates:
+            if os.path.exists(path):
+                try:
+                    return QLearningAgent.load(path)
+                except Exception as ex:
+                    msg = [
+                        "Failed to load trained agent:",
+                        str(ex),
+                        "",
+                        "Try re-running training:",
+                        "    python train.py --episodes 10000",
+                    ]
+                    break
+        else:
+            msg = [
+                "Trained agent not found.  Looked in:",
+            ] + [f"  {p}" for p in candidates] + [
+                "",
+                "Run training first:",
+                "    python train.py --episodes 10000",
+            ]
+    else:
         msg = [
-            "Failed to load trained agent:",
-            str(ex),
-            "",
-            "Try re-running training:",
-            "    python train.py --episodes 10000",
+            "Could not import agent module:",
+            str(agent_class_err),
         ]
 
-    # Render the error message centred for ~3 seconds.
+    # Render the error message centred for ~5 seconds.
     clock = pygame.time.Clock()
     end_at = pygame.time.get_ticks() + 3000
     while pygame.time.get_ticks() < end_at:
