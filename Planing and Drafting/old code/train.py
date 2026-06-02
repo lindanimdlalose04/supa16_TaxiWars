@@ -2,16 +2,12 @@
 train.py
 ========
 
-Train the Q-learning agent via self-play on Supa16 Taxi Wars.
+Train the Q-learning agent via self-play on KZN Taxi Wars.
 
-Run from the project folder (the folder containing game_1.py):
-
-    python train.py                    # full training run (100,000 episodes)
+Run:
+    python train.py                    # full training run (10,000 episodes)
     python train.py --episodes 1000    # short test run
     python train.py --quick            # very quick (500 ep) for smoke testing
-
-Output (agent.pkl, metrics.json) goes into ./runs/run1/ by default,
-i.e. inside the project folder.
 
 What this script does
 ---------------------
@@ -31,6 +27,12 @@ What this script does
       and logs win rate / avg episode length.
 
 4.  Saves the trained Q-table to disk + a metrics log for plotting.
+
+Design notes
+------------
+* Headless: forces SDL dummy driver so no window opens.
+* No external ML libraries — just stdlib + the project files.
+* All randomness can be seeded for reproducibility.
 """
 
 import os
@@ -41,11 +43,8 @@ import json
 import random
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
-
-# Make imports work no matter where the script is launched from:
-# add the directory THIS file lives in to sys.path. Lets you run
-# `python train.py` from anywhere.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+#sys.path.insert(0, "/home/claude")
+sys.path.insert(0, "Users\linda\OneDrive\Documents\2026-YEAR 4\SEMESTER ONE\Artificial Intelligence 1\Project\ml_model")
 
 from game_1 import GameEngine
 from state_encoder import encode, compute_reward
@@ -56,9 +55,9 @@ from agent import QLearningAgent, RandomAgent, GreedyAgent
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────
 
-MAX_MOVES_PER_EPISODE = 300
-EVAL_GAMES_PER_OPPONENT = 100
-LOG_EVERY = 500
+MAX_MOVES_PER_EPISODE = 300   # episode cap (your original spec)
+EVAL_GAMES_PER_OPPONENT = 100  # 50 as P1, 50 as P2
+LOG_EVERY = 500                # also evaluate at these milestones
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -66,6 +65,17 @@ LOG_EVERY = 500
 # ─────────────────────────────────────────────────────────────────────────
 
 def play_training_episode(agent, engine, max_moves=MAX_MOVES_PER_EPISODE):
+    """
+    Play one episode of self-play, updating the agent after every move.
+
+    Returns
+    -------
+    dict with episode statistics:
+        - moves            : number of moves played
+        - winner           : 1, 2, or 0 (timeout / no winner)
+        - p1_score, p2_score
+        - p1_total_reward, p2_total_reward  (cumulative shaped reward)
+    """
     engine.reset()
 
     p1_total_reward = 0.0
@@ -74,23 +84,38 @@ def play_training_episode(agent, engine, max_moves=MAX_MOVES_PER_EPISODE):
     while not engine.game_over and engine.move_count < max_moves:
         cp = engine.current_player
 
+        # Capture the state BEFORE the move from the mover's perspective.
+        # This is the (s, a) that the update will use.
         prev_raw = engine.get_state()
         state_key = encode(prev_raw, perspective=cp)
         valid = engine.valid_moves
 
         if not valid:
+            # Engine handles stalemate inside do_move() (any node id triggers it).
             engine.do_move(0)
             continue
 
         action = agent.choose_action(state_key, valid)
         result = engine.do_move(action)
 
+        # After the move, get the new state. Note: current_player has now
+        # switched (unless POLICE handling kept it the same). For the update
+        # we want the next state FROM THE MOVER'S PERSPECTIVE, and the valid
+        # actions there are the actions the mover would face on their NEXT
+        # turn. In a two-player game this is somewhat fuzzy — the standard
+        # tabular self-play approach is to just use the immediate next state.
         new_raw = engine.get_state()
         next_state_key = encode(new_raw, perspective=cp)
 
+        # Compute the valid actions for the mover from the new state.
+        # If the mover isn't the current player anymore (the usual case), we
+        # need to recompute. We don't want to call engine.valid_moves because
+        # that's for the player whose turn it currently is.
         if new_raw["current_player"] == cp:
+            # Still mover's turn (e.g. opponent was police-blocked) — use engine's
             next_valid = engine.valid_moves
         else:
+            # Compute mover's hypothetical valid moves from their position
             from game_1 import ROUTES_DATA, get_connected
             mover_pos = new_raw["p1_pos"] if cp == 1 else new_raw["p2_pos"]
             opp_pos   = new_raw["p2_pos"] if cp == 1 else new_raw["p1_pos"]
@@ -111,6 +136,7 @@ def play_training_episode(agent, engine, max_moves=MAX_MOVES_PER_EPISODE):
         else:
             p2_total_reward += reward
 
+    # End of episode
     agent.decay_epsilon()
 
     return {
@@ -125,10 +151,20 @@ def play_training_episode(agent, engine, max_moves=MAX_MOVES_PER_EPISODE):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Evaluation
+# Evaluation: agent vs a non-learning opponent
 # ─────────────────────────────────────────────────────────────────────────
 
 def evaluate_against(agent, opponent, n_games, opponent_uses_raw_state=False, seed=0):
+    """
+    Evaluate `agent` (Q-learning) against `opponent` (Random or Greedy).
+    Plays n_games games total, half with agent as P1 and half as P2.
+
+    `opponent_uses_raw_state`: if True, the opponent is passed the raw state
+    dict instead of the encoded tuple. GreedyAgent needs this; RandomAgent
+    doesn't care.
+
+    Returns a dict with win counts and average length.
+    """
     half = n_games // 2
     games = [(1, i) for i in range(half)] + [(2, i + half) for i in range(half)]
 
@@ -136,8 +172,9 @@ def evaluate_against(agent, opponent, n_games, opponent_uses_raw_state=False, se
     total_moves = 0
     total_reward = 0.0
 
+    # Save agent's epsilon and force greedy evaluation
     saved_eps = agent.epsilon
-    agent.epsilon = 0.0
+    agent.epsilon = 0.0  # pure exploitation during evaluation
 
     try:
         for agent_role, game_seed in games:
@@ -157,9 +194,11 @@ def evaluate_against(agent, opponent, n_games, opponent_uses_raw_state=False, se
                     continue
 
                 if cp == agent_role:
+                    # Agent's turn — use Q-table
                     state_key = encode(raw, perspective=cp)
                     action = agent.choose_action(state_key, valid, greedy=True)
                 else:
+                    # Opponent's turn
                     if opponent_uses_raw_state:
                         action = opponent.choose_action(raw, valid)
                     else:
@@ -169,6 +208,7 @@ def evaluate_against(agent, opponent, n_games, opponent_uses_raw_state=False, se
                 result = engine.do_move(action)
                 new_raw = engine.get_state()
 
+                # Track agent's reward (for logging only — no updates during eval)
                 if cp == agent_role:
                     ep_reward += compute_reward(result, perspective=agent_role,
                                                 prev_state=prev_raw,
@@ -184,7 +224,7 @@ def evaluate_against(agent, opponent, n_games, opponent_uses_raw_state=False, se
             else:
                 draws += 1
     finally:
-        agent.epsilon = saved_eps
+        agent.epsilon = saved_eps  # restore exploration
 
     return {
         "wins": wins,
@@ -213,11 +253,11 @@ def train(episodes, log_every, out_dir, seed=0, verbose=True):
         "epsilon":        [],
         "q_table_size":   [],
         "states_seen":    [],
-        "train_winner_p1": [],
+        "train_winner_p1": [],  # rolling P1 win count since last log
         "train_winner_p2": [],
-        "train_finished":  [],
+        "train_finished":  [],  # rolling finished count
         "vs_random_wr":    [],
-        "vs_random_dwr":   [],
+        "vs_random_dwr":   [],  # decisive (excluding draws/timeouts)
         "vs_greedy_wr":    [],
         "vs_greedy_dwr":   [],
         "avg_train_reward": [],
@@ -225,7 +265,7 @@ def train(episodes, log_every, out_dir, seed=0, verbose=True):
 
     if verbose:
         print(f"Training {episodes:,} episodes, evaluating every {log_every:,}")
-        print(f"Output dir: {os.path.abspath(out_dir)}")
+        print(f"Output dir: {out_dir}")
         print("=" * 76)
         print(f"{'episode':>8}  {'eps':>5}  {'Q-size':>7}  {'states':>7}  "
               f"{'finished':>8}  {'vs Rand':>8}  {'vs Greedy':>9}  {'time':>6}")
@@ -242,6 +282,7 @@ def train(episodes, log_every, out_dir, seed=0, verbose=True):
         if result["winner"] == 1: rolling_p1 += 1
         elif result["winner"] == 2: rolling_p2 += 1
         if result["finished"]: rolling_finished += 1
+        # Average across both perspectives (since the agent is both sides)
         rolling_reward_sum += (result["p1_total_reward"] + result["p2_total_reward"]) / 2.0
 
         if ep % log_every == 0 or ep == episodes:
@@ -292,14 +333,15 @@ def train(episodes, log_every, out_dir, seed=0, verbose=True):
         print(f"Final Q-table: {agent.q_table_size():,} entries, "
               f"{agent.num_states_seen():,} distinct states")
 
+    # Persist agent and metrics
     agent_path  = os.path.join(out_dir, "agent.pkl")
     metrics_path = os.path.join(out_dir, "metrics.json")
     agent.save(agent_path)
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     if verbose:
-        print(f"Saved agent  -> {agent_path}")
-        print(f"Saved metrics -> {metrics_path}")
+        print(f"Saved agent  → {agent_path}")
+        print(f"Saved metrics → {metrics_path}")
 
     return agent, metrics
 
@@ -312,9 +354,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--episodes", type=int, default=100_000)
     parser.add_argument("--log-every", type=int, default=LOG_EVERY)
-    # Relative path: output goes into ./runs/run1/ next to this script.
-    # Works on Windows, macOS, Linux.
-    parser.add_argument("--out-dir", default="runs/run1")
+    parser.add_argument("--out-dir", default="/home/claude/runs/run1")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--quick", action="store_true",
                         help="500-episode smoke test (overrides --episodes)")

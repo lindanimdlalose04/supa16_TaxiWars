@@ -7,12 +7,12 @@ Bridge between the game engine and the Q-learning agent.
 Three responsibilities:
   1. encode_features(state, perspective)
         Take a raw state dict from GameEngine.get_state() and produce a
-        15-dimensional feature vector from the perspective of one player.
+        13-dimensional feature vector from the perspective of one player.
         This is the agent's view of the world.
 
   2. discretise(features)
         Bin each continuous feature into one of 5 levels and return a tuple
-        of 15 ints (the Q-table state key). Discretisation is necessary
+        of 13 ints (the Q-table state key). Discretisation is necessary
         because a tabular Q-table needs a finite, hashable state space.
 
   3. compute_reward(result, perspective, ...)
@@ -22,15 +22,6 @@ Three responsibilities:
 The 'perspective' argument (1 or 2) is what makes self-play work: the
 same agent (one Q-table) can play either role because the encoder
 always presents the state from the current player's point of view.
-
-History note:
-  Originally 13 features. Features 14 (region_completion_pressure) and
-  15 (worst_neighbour_obstacle) were added to give the agent two
-  strategic signals it previously lacked:
-    - 14: how close it is to claiming a region (smooth gradient toward
-          the +7 region bonus instead of a cliff at the last node)
-    - 15: which specific obstacle is on its adjacent routes (so it can
-          distinguish "NK ahead" from "SNK ahead")
 """
 
 from game_1 import NODES_DATA, ROUTES_DATA, REGIONS, NODE_REGION, get_connected
@@ -64,55 +55,13 @@ def _region_index_for_node(node_id):
     return _REGION_INDEX[reg["key"]]
 
 
-# Pre-build an adjacency dict for fast BFS over the static map graph.
-# Keys are node IDs, values are lists of neighbour node IDs.
-# Built once at import time; the map structure never changes during a game.
-_ADJ = {n["id"]: [c["to"] for c in get_connected(ROUTES_DATA, n["id"])]
-        for n in NODES_DATA}
-
-
-def _bfs_min_distance(start, targets, blocked_node=None):
-    """
-    Return the minimum number of edges (moves) from `start` to ANY node in
-    `targets`. Returns None if no target is reachable.
-
-    `blocked_node` (optional) is a node that the BFS must avoid — used to
-    treat the opponent's current position as impassable, since the agent
-    can't move onto it. Set to None to ignore.
-
-    Used to compute Feature 14 (region completion pressure): "how many
-    moves away from completing one of my partially-claimed regions?"
-    """
-    if start in targets:
-        return 0
-    visited = {start}
-    if blocked_node is not None:
-        visited.add(blocked_node)
-    frontier = [(start, 0)]
-    while frontier:
-        node, dist = frontier.pop(0)
-        for nb in _ADJ.get(node, []):
-            if nb in visited:
-                continue
-            if nb in targets:
-                return dist + 1
-            visited.add(nb)
-            frontier.append((nb, dist + 1))
-    return None
-
-
-# Severity ranking for obstacles, matching the reward magnitudes:
-# SNK (-6) > NK (-3) > POL (-2). Higher value = worse.
-_OBSTACLE_SEVERITY = {None: 0.0, "POL": 0.33, "NK": 0.67, "SNK": 1.0}
-
-
 # ─────────────────────────────────────────────────────────────────────────
 # 1. FEATURE ENCODING
 # ─────────────────────────────────────────────────────────────────────────
 
 def encode_features(state, perspective):
     """
-    Encode the raw game state into a 15-element list of floats in [0, 1]
+    Encode the raw game state into a 13-element list of floats in [0, 1]
     (feature 5 is in [-1, 1]) from the perspective of `perspective` (1 or 2).
 
     Parameters
@@ -124,7 +73,7 @@ def encode_features(state, perspective):
 
     Returns
     -------
-    list of 15 floats
+    list of 13 floats
     """
     # Resolve "my" vs "opp" based on perspective
     if perspective == 1:
@@ -146,8 +95,6 @@ def encode_features(state, perspective):
     n_valid = len(my_neighbours)
 
     customers = state["customers"]
-    node_owner = state.get("node_owner", {})
-    routes_cleared = state.get("routes_cleared", {})
 
     # Feature 6: customers at my current node (almost always 0 after collection,
     # but useful in transient states e.g. after SNK rollback)
@@ -174,46 +121,6 @@ def encode_features(state, perspective):
     # Feature 13: move freedom = fraction of max possible degree available
     move_freedom = n_valid / _MAX_DEGREE if _MAX_DEGREE > 0 else 0.0
 
-    # ─── Feature 14: region completion pressure ──────────────────────────
-    # For each region I have *partially* claimed (own at least one node, but
-    # not all), find the shortest path (in moves) to my nearest unowned node
-    # in that region. Convert to a 0..1 score where higher = closer to claim.
-    # If I have no partial regions, the feature is 0.
-    candidate_targets = set()
-    for reg in REGIONS:
-        nodes = reg["nodes"]
-        owned_by_me = [nid for nid in nodes if node_owner.get(nid, 0) == perspective]
-        if 0 < len(owned_by_me) < len(nodes):
-            # Partly mine — collect the unowned (by me) nodes of this region
-            for nid in nodes:
-                if node_owner.get(nid, 0) != perspective:
-                    candidate_targets.add(nid)
-    if candidate_targets:
-        dist = _bfs_min_distance(my_pos, candidate_targets, blocked_node=opp_pos)
-        if dist is None:
-            region_completion_pressure = 0.0
-        else:
-            # dist == 0 means I'm sitting on a completion node already (rare,
-            # since once I'd have collected it the region wouldn't be partial).
-            # dist == 1 → 0.5, dist == 2 → 0.33, dist == 5 → 0.17, etc.
-            region_completion_pressure = 1.0 / (1.0 + dist)
-    else:
-        region_completion_pressure = 0.0
-
-    # ─── Feature 15: worst obstacle on any adjacent (valid) route ────────
-    # If a route has an uncleared obstacle, we record its severity.
-    # The feature is the *max* severity across my valid routes — i.e. the
-    # worst thing I could step into right now. 0 if every neighbour is safe.
-    if n_valid > 0:
-        worst_obstacle = 0.0
-        for c in my_neighbours:
-            if c["obs"] is not None and not c["route"]["cleared"]:
-                sev = _OBSTACLE_SEVERITY.get(c["obs"], 0.0)
-                if sev > worst_obstacle:
-                    worst_obstacle = sev
-    else:
-        worst_obstacle = 0.0
-
     features = [
         (my_pos - 1) / (NUM_NODES - 1),                 # 1
         (opp_pos - 1) / (NUM_NODES - 1),                # 2
@@ -228,8 +135,6 @@ def encode_features(state, perspective):
         _region_index_for_node(my_pos) / (NUM_REGIONS - 1),   # 11
         _region_index_for_node(opp_pos) / (NUM_REGIONS - 1),  # 12
         move_freedom,                                   # 13
-        region_completion_pressure,                     # 14 (NEW)
-        worst_obstacle,                                 # 15 (NEW)
     ]
     return features
 
@@ -238,12 +143,12 @@ def encode_features(state, perspective):
 # 2. DISCRETISATION
 # ─────────────────────────────────────────────────────────────────────────
 
-NUM_BINS = 5  # 5 levels per feature → 5^15 ≈ 30B possible keys (sparse in practice)
+NUM_BINS = 5  # 5 levels per feature → 5^13 ≈ 1.2B possible keys (sparse in practice)
 
 
 def discretise(features):
     """
-    Convert the 15 continuous features into a tuple of 15 ints in 0..4.
+    Convert the 13 continuous features into a tuple of 13 ints in 0..4.
     Each feature is binned independently.
 
     Feature 5 ('score difference') lives in [-1, 1]; all others in [0, 1].
@@ -365,7 +270,7 @@ if __name__ == "__main__":
     print(f"  Regions:     {NUM_REGIONS}")
     print(f"  Max degree:  {_MAX_DEGREE}")
     print(f"  Bins:        {NUM_BINS}")
-    print(f"  Theoretical state space: {NUM_BINS}^15 = {NUM_BINS**15:,}")
+    print(f"  Theoretical state space: {NUM_BINS}^13 = {NUM_BINS**13:,}")
 
     print("\nInitial state, P1 perspective:")
     f1 = encode_features(state, perspective=1)
@@ -373,8 +278,7 @@ if __name__ == "__main__":
     names = [
         "my_pos", "opp_pos", "my_score", "opp_score", "score_diff",
         "cust_here", "best_neighbour", "obstacle_pressure",
-        "my_blocked", "opp_blocked", "my_region", "opp_region", "move_freedom",
-        "region_completion", "worst_neighbour_obs"
+        "my_blocked", "opp_blocked", "my_region", "opp_region", "move_freedom"
     ]
     for n, fv, kv in zip(names, f1, k1):
         print(f"  {n:20s} = {fv:+.3f}   bin={kv}")

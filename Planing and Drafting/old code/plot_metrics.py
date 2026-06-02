@@ -7,9 +7,8 @@ Reads metrics.json from a run directory and produces:
   - reward_curve.png    : average training reward (rolling)
   - combined.png        : 2x2 grid of all four for the report
 
-Run from the project folder:
-    python plot_metrics.py                # reads ./runs/run1/metrics.json
-    python plot_metrics.py runs/run2      # custom run directory
+Run:
+    python plot_metrics.py [run_dir]
 """
 
 import json
@@ -36,10 +35,6 @@ def main(run_dir):
     vs_grd_wr   = [w * 100 for w in m["vs_greedy_wr"]]
     vs_grd_dwr  = [w * 100 for w in m["vs_greedy_dwr"]]
     avg_reward  = m["avg_train_reward"]
-
-    # Derive title bits from the actual data so the figure caption is correct
-    total_eps = eps[-1] if eps else 0
-    log_every = (eps[1] - eps[0]) if len(eps) > 1 else 500
 
     # ── 1. learning curves ────────────────────────────────────────────────
     plt.figure(figsize=(9, 5.5))
@@ -87,8 +82,8 @@ def main(run_dir):
 
     ax2 = ax1.twinx()
     color2 = "#1f77b4"
-    ax2.plot(eps, eps_curr, marker="s", lw=2, color=color2, label="\u03b5 (exploration)")
-    ax2.set_ylabel("\u03b5 (exploration rate)", color=color2)
+    ax2.plot(eps, eps_curr, marker="s", lw=2, color=color2, label="ε (exploration)")
+    ax2.set_ylabel("ε (exploration rate)", color=color2)
     ax2.tick_params(axis="y", labelcolor=color2)
     ax2.set_ylim(0, 1.05)
 
@@ -127,25 +122,22 @@ def main(run_dir):
 
     # (d) Epsilon + finish rate
     ax = axes[1, 1]
-    ax.plot(eps, eps_curr,    marker="o", lw=2, color="#1f77b4", label="\u03b5")
+    ax.plot(eps, eps_curr,    marker="o", lw=2, color="#1f77b4", label="ε")
     ax.plot(eps, [f / 100 for f in finished], marker="s", lw=2,
             color="#8c564b", label="Train finish rate")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Fraction"); ax.set_ylim(0, 1.05)
-    ax.set_title("(d) Exploration \u03b5 and training-game finish rate")
+    ax.set_title("(d) Exploration ε and training-game finish rate")
     ax.legend(); ax.grid(alpha=0.3)
 
-    # Title pulls the real episode count from the data
-    plt.suptitle(
-        f"Supa16 Taxi Wars — Q-learning training metrics "
-        f"({total_eps:,} episodes, eval every {log_every:,})",
-        fontsize=13, y=1.00,
-    )
+    plt.suptitle("KZN Taxi Wars — Q-learning training metrics "
+                 f"(10 000 episodes, eval every 500)",
+                 fontsize=13, y=1.00)
     plt.tight_layout()
     plt.savefig(os.path.join(run_dir, "combined.png"), dpi=150)
     plt.close()
 
-    print(f"Plots saved to {os.path.abspath(run_dir)}")
+    print(f"Plots saved to {run_dir}/")
     for fname in ("learning_curves.png", "q_growth.png", "reward_curve.png",
                   "combined.png"):
         path = os.path.join(run_dir, fname)
@@ -154,6 +146,5 @@ def main(run_dir):
 
 
 if __name__ == "__main__":
-    # Default to ./runs/run1 — matches train.py's default output directory
-    run_dir = sys.argv[1] if len(sys.argv) > 1 else "runs/run1"
+    run_dir = sys.argv[1] if len(sys.argv) > 1 else "\Users\linda\OneDrive\Documents\2026-YEAR 4\SEMESTER ONE\Artificial Intelligence 1\Project\ml_model"#"/home/claude/runs/run1"
     main(run_dir)

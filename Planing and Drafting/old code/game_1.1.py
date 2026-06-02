@@ -24,76 +24,55 @@ TURN_TIME      = 30.0   # seconds per turn
 
 
 C = {
-    # ── Backgrounds (light parchment theme) ──────────────────────────────
-    'bg':            (30,32,50),#(40, 45, 22),   # cream parchment (KZN landmass base)
-    'bg_grid':       (140, 126, 100),   # used for neighbour borders (dashed)
-    'panel':         (250, 244, 230),   # warm cream sidebar
-    'panel_border':  ( 42,  38,  32),   # dark slate
-    'panel_light':   (238, 230, 210),   # slightly darker cream divider
+    # Backgrounds
+    'bg':            ( 255, 255, 255),   # deep navy ( 28, 24, 23)
+    'bg_grid':       ( 28,  32,  48),
+    'panel':         ( 22,  24,  42),
+    'panel_border':  ( 60,  64,  96),
+    'panel_light':   ( 36,  40,  64),
 
-    # ── Map terrain colours (used by _draw_map_background) ──────────────
-    'terrain_outside':  (216, 211, 196),  # neighbouring provinces base
-    'terrain_mpum':     (204, 190, 158),  # Mpumalanga tan
-    'terrain_fs':       (210, 200, 174),  # Free State
-    'terrain_lesotho':  (191, 181, 148),  # Lesotho (slightly darker)
-    'terrain_ec':       (201, 192, 166),  # Eastern Cape
-    'terrain_eswatini': (212, 194, 147),  # Eswatini wedge
-    'terrain_border':   (140, 126,  90),  # neighbour border dashed lines
-    'kzn_outline':      ( 63,  90,  58),  # dark green KZN province outline
-    'kzn_base':         (200, 216, 178),  # KZN landmass base green
-    'kzn_highlands':    (148, 180, 122),  # Drakensberg / west
-    'kzn_midlands':     (168, 194, 140),  # midlands sage
-    'kzn_zululand':     (191, 206, 142),  # inland north
-    'kzn_coastal':      (214, 220, 156),  # coastal lowlands
-    'kzn_south':        (176, 200, 128),  # south coast band
-    'ocean':            (191, 219, 229),  # Indian Ocean
-    'ocean_wave':       (122, 181, 199),  # ocean wave pattern strokes
-    'mountain_fill':    (106, 132,  86),
-    'mountain_edge':    ( 63,  90,  58),
-    'contour':          ( 74, 110,  74),  # subtle topo contour lines
-
-    # ── Accent (hot pink magenta brand colour) — menu only ──────────────
+    # Accent (hot pink magenta brand colour) — menu only
     'accent':        (220,  20, 180),
-    'accent_dim':    (215, 160,  20), #(110,  10,  90),
+    'accent_dim':    (110,  10,  90),
     'accent_glow':   (255,  60, 210),
 
-    # ── Players (deeper, more saturated for the light background) ───────
-    'p1':            ( 20, 145, 195),   # deeper teal-cyan
-    'p1_dark':       ( 10,  75, 110),
-    'p2':            (210,  50, 130),   # deeper rose-pink
-    'p2_dark':       (115,  25,  70),
+    # Players (P1 = cyan cab, P2 = hot-pink cab)
+    'p1':            ( 50, 200, 235),   # cyan
+    'p1_dark':       ( 20, 120, 150),
+    'p2':            (240,  90, 160),   # hot pink
+    'p2_dark':       (150,  40,  95),
 
-    # ── Node base ───────────────────────────────────────────────────────
-    'node_fill':     (251, 248, 238),   # off-white
-    'node_border':   ( 42,  38,  32),   # dark slate
+    # Node base
+    'node_fill':     ( 30,  34,  56),
+    'node_border':   ( 90, 100, 140),
 
-    # ── Valid-move ring (still soft yellow, reads on cream) ─────────────
-    'valid_ring':    (225, 255,  255),   # amber, darker so it stands on cream
+    # Valid-move ring
+    'valid_ring':    (250, 240, 130),   # soft yellow — readable on asphalt
 
-    # ── Roads (dark asphalt + cream centreline) ─────────────────────────
-    'road_edge':     ( 30,  26,  22),   # very dark edge
-    'road_fill':     ( 62,  56,  48),   # dark warm grey asphalt
-    'road_line':     (244, 239, 216),   # cream centreline
-    'road_used':     ( 96,  88,  76),   # lighter, dusty (cleared)
-    'road_used_line':(174, 162, 130),
+    # Roads (replacing the magenta "route" lines)
+    'road_edge':     ( 32,  34,  44),   # darker shoulder/border
+    'road_fill':     ( 68,  72,  86),   # asphalt
+    'road_line':     (235, 220, 130),   # warm yellow lane markings
+    'road_used':     ( 44,  46,  58),   # darker dimmed used road
+    'road_used_line':( 90,  86,  72),   # dim used lane line
 
-    # ── Text ────────────────────────────────────────────────────────────
-    'white':         ( 42,  38,  32), #(215, 160,  20), #( 42,  38,  32),   # primary (now dark — name kept for compat)
-    'text_dim':      ( 2,  8,  9),   # warm grey secondary
-    'text_faint':    (140, 126, 100),   # light earthy faint
+    # Text
+    'white':         (245, 245, 250),
+    'text_dim':      (190, 190, 215),
+    'text_faint':    (120, 120, 155),
 
-    # ── Obstacle colours (kept punchy; readable on cream) ───────────────
-    'nkabi':         (209,  79,  58),   # red-orange (NK)
-    'super_nkabi':   (126,  31,  31),   # deep red (SNK)
-    'police':        ( 46,  90, 140),   # navy blue (POL)
+    # Obstacle colours
+    'nkabi':         (255, 200,  40),   # yellow
+    'super_nkabi':   (235,  60,  60),   # red
+    'police':        ( 70, 160, 255),   # blue
 
-    # ── Misc ────────────────────────────────────────────────────────────
-    'gold':          (215, 160,  20),   # amber-gold (flash halo)
-    'timer_safe':    ( 56, 142,  78),
-    'timer_warn':    (200, 145,  20),
-    'timer_danger':  (180,  40,  40),
-    'taxi_window':   (251, 248, 238),   # cream taxi windows
-    'taxi_outline':  ( 22,  20,  18),
+    # Misc
+    'gold':          (255, 200,   0),
+    'timer_safe':    ( 70, 220, 110),
+    'timer_warn':    (255, 190,   0),
+    'timer_danger':  (235,  60,  60),
+    'taxi_window':   (180, 220, 255),
+    'taxi_outline':  ( 12,  14,  22),
 }
 
 
@@ -466,7 +445,7 @@ class GameEngine:
 
         # Consecutive non-move counter (stalemate + blocked-turn).
         # If too many turns pass without anyone making a real move, declare
-        # a draw — prevents an infinite stalemate/block loop.
+        # a draw prevents an infinite stalemate/block loop.
         self.consecutive_non_moves = 0
         self.NON_MOVE_LIMIT = 4
 
@@ -1055,8 +1034,8 @@ class TaxiWarsGame:
     # ── rendering ─────────────────────────────────────────────────────────────
 
     def render(self):
-        self._draw_map_background()
-        self._draw_region_polygons()
+        self.screen.fill(C['bg'])
+        self._draw_grid()
         self._draw_region_labels()
         self._draw_routes()
         self._draw_nodes()
@@ -1066,100 +1045,12 @@ class TaxiWarsGame:
         self._draw_game_over()
         pygame.display.flip()
 
-    # ── map background (Variant B — clean parchment) ─────────────────────────
+    # ── grid background ───────────────────────────────────────────────────────
 
-    def _draw_map_background(self):
-        """
-        Variant B background: solid off-white parchment fill. No terrain, no
-        ocean — the visual hierarchy is owned by the region polygons (drawn
-        next) and the road network on top.
-        """
-        self.screen.fill(C['bg'])
-
-    # ── region polygons (Variant B — flat district tiles under nodes) ────────
-
-    def _draw_region_polygons(self):
-        """
-        Draw each region as a flat convex-hull polygon underneath its nodes,
-        in a lightened version of the region's own colour. This is the key
-        Variant-B feature — it makes the district structure of the map
-        visually obvious without any extra labels needed.
-
-        Implementation:
-          - For each region, compute the convex hull of its nodes' screen
-            positions.
-          - Pad the hull outward by ~30px so the polygon sits *around* the
-            nodes, not just touching them.
-          - Fill with a desaturated, lightened version of the region's
-            colour at low alpha so it reads as a tile, not as splatter.
-        """
-        # Quick convex-hull (Andrew's monotone chain). Returns the hull points
-        # in counter-clockwise order.
-        def convex_hull(points):
-            pts = sorted(set(points))
-            if len(pts) <= 1:
-                return pts
-
-            def cross(o, a, b):
-                return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-
-            lower = []
-            for p in pts:
-                while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-                    lower.pop()
-                lower.append(p)
-            upper = []
-            for p in reversed(pts):
-                while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-                    upper.pop()
-                upper.append(p)
-            return lower[:-1] + upper[:-1]
-
-        # Pad each hull point outward from the centroid by PADDING pixels so
-        # the polygon comfortably surrounds its nodes.
-        PADDING = 34
-
-        node_pos = {n['id']: tp(n['x'], n['y'], self.ms, self.mox, self.moy)
-                    for n in self.engine.nodes}
-
-        for reg in REGIONS:
-            pts = [node_pos[nid] for nid in reg['nodes'] if nid in node_pos]
-            if len(pts) < 3:
-                continue
-            hull = convex_hull(pts)
-            if len(hull) < 3:
-                continue
-            cx = sum(p[0] for p in hull) / len(hull)
-            cy = sum(p[1] for p in hull) / len(hull)
-            padded = []
-            for px, py in hull:
-                vx, vy = px - cx, py - cy
-                length = math.hypot(vx, vy) or 1
-                padded.append((
-                    int(px + vx / length * PADDING),
-                    int(py + vy / length * PADDING),
-                ))
-
-            # Lightened district colour: blend the region's colour with the
-            # background cream at ~70% cream so the tile is soft, not loud.
-            r, g, b = reg['colour']
-            bg_r, bg_g, bg_b = C['bg']
-            BLEND = 0.72   # 0 = pure region colour, 1 = pure background
-            fill = (
-                int(r * (1 - BLEND) + bg_r * BLEND),
-                int(g * (1 - BLEND) + bg_g * BLEND),
-                int(b * (1 - BLEND) + bg_b * BLEND),
-            )
-            # A slightly darker (less blended) border for the polygon edge.
-            BORDER_BLEND = 0.45
-            border = (
-                int(r * (1 - BORDER_BLEND) + bg_r * BORDER_BLEND),
-                int(g * (1 - BORDER_BLEND) + bg_g * BORDER_BLEND),
-                int(b * (1 - BORDER_BLEND) + bg_b * BORDER_BLEND),
-            )
-
-            pygame.draw.polygon(self.screen, fill, padded)
-            pygame.draw.polygon(self.screen, border, padded, 1)
+    def _draw_grid(self):
+        for gx in range(0, MAP_W, 48):
+            for gy in range(0, WIN_H, 48):
+                pygame.draw.rect(self.screen, C['bg_grid'], (gx - 1, gy - 1, 2, 2))
 
     # ── region labels ─────────────────────────────────────────────────────────
 
