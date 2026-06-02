@@ -25,7 +25,7 @@ TURN_TIME      = 30.0   # seconds per turn
 
 C = {
     # Backgrounds
-    'bg':            ( 14,  16,  28),   # deep navy
+    'bg':            ( 250, 244, 230),   # deep navy
     'bg_grid':       ( 28,  32,  48),
     'panel':         ( 22,  24,  42),
     'panel_border':  ( 60,  64,  96),
@@ -443,6 +443,12 @@ class GameEngine:
         self.node_owner   = {n['id']: 0 for n in self.nodes}
         self.region_owner = {reg['key']: 0 for reg in REGIONS}
 
+        # Consecutive non-move counter (stalemate + blocked-turn).
+        # If too many turns pass without anyone making a real move, declare
+        # a draw — prevents an infinite stalemate/block loop.
+        self.consecutive_non_moves = 0
+        self.NON_MOVE_LIMIT = 4
+
         self._update_valid_moves()
         return self.get_state()
 
@@ -494,26 +500,46 @@ class GameEngine:
         somewhere they remember being, not at their immediately-previous
         square).
 
-        Fallback when there is no prior history: send them back to their
-        starting town (Jozini for P1, Kokstad for P2). If a came_from
-        exists but there's no deeper history, we use came_from as a last
-        resort rather than teleporting to Jozini/Kokstad.
+        BUG FIX (SNK loop): never teleport onto the opponent's current node.
+        If the natural target is occupied, walk further back in the trail
+        until a free node is found. If none exists, fall back to `came_from`
+        if that is also free, else don't teleport at all — the player still
+        loses the point but stays put. This prevents the degenerate state
+        where both players end up on the same node.
         """
         trail   = self.trail_p1 if player == 1 else self.trail_p2
         history = list(trail)  # newest-first, does NOT include came_from
-        steps   = min(3, len(history))
+        opp_pos = self.p2_pos if player == 1 else self.p1_pos
 
-        if steps > 0:
-            target = history[steps - 1]
-            msg    = f"SUPER NKABI! P{player} sent back {steps} stops"
-        elif came_from is not None:
-            # No prior history — just bounce back to where they came from.
+        # Try the canonical target (history[2]) first, then walk further
+        # back through the trail looking for a node not occupied by the opponent.
+        # If history is empty, the loop range is empty and we fall through to
+        # the came_from fallback below.
+        target = None
+        steps_used = 0
+        if history:
+            start_i = min(3, len(history)) - 1
+            for i in range(start_i, len(history)):
+                candidate = history[i]
+                if candidate != opp_pos:
+                    target = candidate
+                    steps_used = i + 1
+                    break
+
+        if target is not None:
+            msg = f"SUPER NKABI! P{player} sent back {steps_used} stops"
+        elif came_from is not None and came_from != opp_pos:
+            # Trail offered no free node — bounce back to where they came from.
             target = came_from
             msg    = f"SUPER NKABI! P{player} bounced back"
         else:
-            # Truly nothing — fall back to canonical start.
-            target = 1 if player == 1 else 24
-            msg    = f"SUPER NKABI! P{player} sent back to start!"
+            # Everything is occupied or no history at all — stay put, just
+            # lose the point. Avoids creating an illegal two-on-one-node state.
+            if player == 1:
+                self.p1_score = max(0, self.p1_score - 1)
+            else:
+                self.p2_score = max(0, self.p2_score - 1)
+            return f"SUPER NKABI! P{player} loses 1 point (no clear rollback)", None
 
         if player == 1:
             self.p1_pos   = target
@@ -586,13 +612,14 @@ class GameEngine:
         """
         R = {'ok': False, 'msg': '', 'msg_type': 'info',
              'flash': None, 'gained': 0, 'obstacle': None, 'snk_target': None,
-             'region_claimed_by': 0}
+             'region_claimed_by': 0,
+             'region_name': None, 'region_nodes': None, 'region_bonus': 0}
 
         if self.game_over:
             R['msg'] = "Game already over."
             return R
 
-        # Blocked turn
+        # Blocked turn (POLICE)
         if self.turn_blocked[self.current_player]:
             R['ok'] = True
             R['msg'] = f"P{self.current_player} blocked — turn skipped."
@@ -600,6 +627,13 @@ class GameEngine:
             self.turn_blocked[self.current_player] = False
             self.current_player = 3 - self.current_player
             self._update_valid_moves()
+            # BUG FIX: count consecutive non-moves to prevent infinite skip loops
+            self.consecutive_non_moves += 1
+            if self.consecutive_non_moves >= self.NON_MOVE_LIMIT:
+                self.game_over = True
+                self.winner    = 0
+                R['msg'] = "DRAW — too many consecutive non-moves."
+                R['msg_type'] = 'warn'
             return R
 
         # Stalemate
@@ -608,7 +642,18 @@ class GameEngine:
             R['msg'] = f"STALEMATE — P{self.current_player} has no moves."
             R['msg_type'] = 'warn'
             self.current_player = 3 - self.current_player
+            # BUG FIX: if the next player is also blocked, clear their block
+            # so the game progresses rather than alternating two non-moves.
+            if self.turn_blocked[self.current_player]:
+                self.turn_blocked[self.current_player] = False
             self._update_valid_moves()
+            # Count consecutive non-moves — declares a draw if neither side moves
+            self.consecutive_non_moves += 1
+            if self.consecutive_non_moves >= self.NON_MOVE_LIMIT:
+                self.game_over = True
+                self.winner    = 0
+                R['msg'] = "DRAW — too many consecutive non-moves."
+                R['msg_type'] = 'warn'
             return R
 
         # Range check
@@ -643,8 +688,16 @@ class GameEngine:
             self.p2_pos = target_id
         came_from = pos  # the node we stepped off of on this move
 
+        # Remember whether this route had been traversed BEFORE this move.
+        # Obstacles must only fire on the FIRST traversal — after that the
+        # route is "cleared" and the obstacle is gone for the rest of the game.
+        # We capture this BEFORE flipping the flag below.
+        route_was_cleared = route['cleared']
+
         route['cleared'] = True
         self.move_count += 1
+        # A real move happened — reset the non-move counter
+        self.consecutive_non_moves = 0
         R['ok']    = True
         R['flash'] = target_id
 
@@ -671,7 +724,29 @@ class GameEngine:
             # A region is "owned" by player N iff every node in the region has
             # node_owner == N. We also detect *changes* of ownership so the
             # reward function can give a one-off bonus.
-            R['region_claimed_by'] = self._refresh_region_for_node(target_id)
+            claiming_player = self._refresh_region_for_node(target_id)
+            R['region_claimed_by'] = claiming_player
+
+            # If a region was newly claimed by the mover, award the +5 region
+            # bonus to their actual score, and stash the region info so the
+            # renderer can show a message and flash every node in the region.
+            if claiming_player == cp:
+                REGION_BONUS = 5
+                if cp == 1:
+                    self.p1_score += REGION_BONUS
+                else:
+                    self.p2_score += REGION_BONUS
+                claimed_reg = NODE_REGION.get(target_id)
+                if claimed_reg is not None:
+                    R['region_name']  = claimed_reg['name']
+                    R['region_nodes'] = list(claimed_reg['nodes'])
+                    R['region_bonus'] = REGION_BONUS
+                    gained_msg = (
+                        f"P{cp} +{gained} pts \u00b7 {node['name']} "
+                        f"\u2014 DISTRICT CLAIMED: {claimed_reg['name']} (+{REGION_BONUS})"
+                    )
+                    R['msg']      = gained_msg
+                    R['msg_type'] = 'good'
         else:
             R['msg']      = f"P{cp} moved to {node['name']}"
             R['msg_type'] = 'info'
@@ -679,7 +754,10 @@ class GameEngine:
         # Obstacle resolution. If both a customer gain AND an obstacle happened
         # on the same move, combine them into one message so the player isn't
         # left thinking only the obstacle happened.
-        obs = route['obstacle']
+        # CRITICAL: obstacles only fire on a route's FIRST traversal. If the
+        # route was already cleared before this move, treat it as having no
+        # obstacle (the obstacle has been "used up").
+        obs = route['obstacle'] if not route_was_cleared else None
         R['obstacle'] = obs
         snk_fired = False
         if obs == 'NK':
@@ -698,14 +776,18 @@ class GameEngine:
             R['msg']      = f"{gained_msg}  \u2014  {obs_msg}" if gained_msg else obs_msg
             R['msg_type'] = 'warn'
 
-        # Now update the trail. If SNK fired, the player got teleported
-        # somewhere else entirely; their trail jumps from `came_from` to the
-        # landing node without the intermediate hop. We still push
-        # `came_from` so the trail reflects where they were standing before
-        # this whole event.
-        # If no SNK, the player is sitting at `target_id` and `came_from` is
-        # the most recent step they came from.
-        (self.trail_p1 if cp == 1 else self.trail_p2).appendleft(came_from)
+        # Now update the trail.
+        # BUG FIX (trail truthfulness): if SNK fired, the player got teleported
+        # somewhere they wouldn't naturally walk to. Pushing `came_from` here
+        # would mean the trail records a route the player never traversed,
+        # producing wrong rollback targets if SNK fires again later.
+        # When SNK fires we skip the trail push entirely — the player's
+        # current position IS the relevant rollback anchor going forward,
+        # and the next "real" move will push that node naturally.
+        # When no SNK, the player is sitting at `target_id` and `came_from`
+        # is the most recent step they came from.
+        if not snk_fired:
+            (self.trail_p1 if cp == 1 else self.trail_p2).appendleft(came_from)
 
         # Win check
         if self._check_win():
@@ -789,8 +871,18 @@ class TaxiWarsGame:
             return
         if R['flash']:
             self._flash(R['flash'], 1.5 if R['obstacle'] == 'SNK' else 0.9)
-        self._show_msg(R['msg'], R['msg_type'],
-                       3.0 if R['msg_type'] in ('bad', 'warn') else 2.0)
+
+        # District claim — flash every node in the claimed region so the
+        # player can see *which* region they took, and show the message
+        # for longer because it's a celebratory event.
+        if R.get('region_claimed_by'):
+            if R.get('region_nodes'):
+                for nid in R['region_nodes']:
+                    self._flash(nid, 2.2)
+            self._show_msg(R['msg'], 'good', 4.0)
+        else:
+            self._show_msg(R['msg'], R['msg_type'],
+                           3.0 if R['msg_type'] in ('bad', 'warn') else 2.0)
         # Reset turn timer on successful move
         self.turn_time_left = TURN_TIME
 
