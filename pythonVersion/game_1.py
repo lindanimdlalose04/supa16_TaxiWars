@@ -79,7 +79,7 @@ C = {
 
     # ── Text ────────────────────────────────────────────────────────────
     'white':         ( 42,  38,  32), #(215, 160,  20), #( 42,  38,  32),   # primary (now dark — name kept for compat)
-    'text_dim':      ( 2,  8,  9),   # warm grey secondary
+    'text_dim':      ( 2,  8,  69),   # warm grey secondary
     'text_faint':    (140, 126, 100),   # light earthy faint
 
     # ── Obstacle colours (kept punchy; readable on cream) ───────────────

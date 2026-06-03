@@ -1,0 +1,221 @@
+NODES_DATA = [
+    {id: 1, name: "Jozini", x: 710, y: 80, customers: 1},
+    {id: 2, name: "Pongola", x: 560, y: 60, customers: 2},
+    ... 28 more ...
+]
+
+ROUTES_DATA = [
+    {from: 1, to: 2, obstacle: None, cleared: False},
+    {from: 2, to: 14, obstacle: "NK", cleared: False},
+    {from: 4, to: 6, obstacle: "SNK", cleared: False},
+    {from: 16, to: 27, obstacle: "POL", cleared: False},
+    ... 29 more ...
+]
+
+REGIONS = [
+    {key: "northern_natal", name: "Northern Natal", colour: (224,158,58),
+     nodes: [1,2,3,19,18,4,5,6,16], lx: 300, ly: 130},
+    {key: "midlands", name: "Midlands", colour: (92,178,104),
+     nodes: [7,8,27,28,17,9,25], lx: 250, ly: 350},
+    ... 3 more ...
+]
+NODE_REGION = {}
+for each region in REGIONS:
+    for each node_id in region.nodes:
+        NODE_REGION[node_id] = region
+
+
+C = {
+    # Menu accent
+    'accent': (220, 20, 180),
+    'accent_dim': (110, 10, 90),
+    'accent_glow': (255, 60, 210),
+
+    # Players (taxi bodies)
+    'p1': (50, 200, 235),      # cyan
+    'p1_dark': (20, 120, 150),
+    'p2': (240, 90, 160),      # hot pink
+    'p2_dark': (150, 40, 95),
+
+    # Roads
+    'road_edge': (32, 34, 44),
+    'road_fill': (68, 72, 86),
+    'road_line': (235, 220, 130),
+    'road_used': (44, 46, 58),
+    'road_used_line': (90, 86, 72),
+
+    # Nodes
+    'node_fill': (30, 34, 56),
+    'valid_ring': (250, 240, 130),
+
+    # Obstacles
+    'nkabi': (255, 200, 40),
+    'super_nkabi': (235, 60, 60),
+    'police': (70, 160, 255),
+
+    # Timer
+    'timer_safe': (70, 220, 110),
+    'timer_warn': (255, 190, 0),
+    'timer_danger': (235, 60, 60),
+}
+
+ Initialise GameEngine
+    - copy NODES_DATA and ROUTES_DATA so reset() returns to originals
+    - Call reset() to set up initial game state
+
+ reset()
+    For each node: restore customers from ORIGINAL_CUSTOMERS
+    For each route: set 'cleared' = False
+
+    Randomly select two distinct starting towns (no more fixed positions)
+        - p1_pos, p2_pos = random.sample(all_node_ids, 2)
+
+    Set scores to 0
+    current_player = 1
+    turn_blocked = {1: False, 2: False}
+    game_over = False
+    winner = 0
+    move_count = 0
+
+    Initialise trails (deque, maxlen=6) for both players
+
+    Initialise node_owner dict (node_id  0/unclaimed, 1, or 2)
+    Initialise region_owner dict (region_key 0, 1, or 2)
+
+    consecutive_non_moves = 0
+    NON_MOVE_LIMIT = 4
+
+    Calculate valid moves for starting player
+    Return current state as a dict
+
+get_state()
+    Return a snapshot wit:
+        - p1_pos, p2_pos
+        - p1_score, p2_score
+        - current_player
+        - turn_blocked copy
+        - valid_moves copy
+        - customers dict {node_id: remaining_customers}
+        - routes_cleared dict {"from‑to": bool}
+        - game_over, winner
+        - node_owner copy, region_owner copy
+
+_update_valid_moves()
+    - Get current player's position
+    - Get opponent's position
+    - valid_moves = all connected nodes that are NOT the opponent's position
+
+do_move(target_id)
+    This is the heart of the game. Steps:
+
+    1. Validation checks:
+        - If game over return error
+        - If player is turn_blocked skip turn, clear block, switch player
+        - If no valid moves  stalemate  pass turn
+        - If target_id not in 1‑30  error
+        - If target_id not connected  error
+        - If target_id == opponent's node  error
+
+    2. Execute the move:
+        - Remember came_from = current position
+        - Update player's position to target_id
+        - Remember route_was_cleared before modifying it
+        - Set route['cleared'] = True
+        - Increment move_count
+        - Reset consecutive_non_moves = 0
+
+    3. Collect customers:
+        - If node has customers > 0:
+            - gained = node['customers']
+            - node['customers'] = 0
+            - Add gained to player's score
+            - Set node_owner[node_id] = current_player
+            - Call _refresh_region_for_node(node_id) checks if this player now owns the whole district
+            - If region newly claimed:
+                - Award REGION_BONUS (5 points) to player's score
+                - Store region_name and region_nodes in result (for UI flash)
+
+    4 Apply obstacle (only if route was NOT cleared before this move):
+        - NKABI:   lose 2 points (min 0)
+        - SUPER NKABI:
+            - Send player back along their trail (up to 3 stops)
+            - NEVER teleport onto opponent's node – walk back further if needed
+            - If no free node, stay put but still lose 1 point
+            - Lose 1 point
+        - POLICE:   set turn_blocked[player] = True
+
+    5 Update trail:
+        - If SUPER NKABI did NOT fire:
+            - Push came_from to the front of player's trail deque
+
+    6 Check win condition:
+        - If p1_score >= 20 → game_over, winner = 1
+        - If p2_score >= 20 → game_over, winner = 2
+
+    7 Switch turn:
+        - next_player = 3 - current_player
+        - Clear opponent's block if it exists
+        - Otherwise set current_player = next_player
+
+    8 Recalculate valid moves for the new player
+    9 Return result dict (ok, msg, msg_type, flash, gained, obstacle, region_claimed_by, etc.)
+
+ _refresh_region_for_node(node_id)
+    - Find which region this node belongs to
+    - Check node_owner for every node in that region
+    - If all nodes have the same owner (1 or 2) and owner != 0:
+        - new_owner = that player
+    - Else: new_owner = 0
+    - Compare with previous region_owner[region_key]
+    - If changed and new_owner != 0 return new_owner (claim event)
+    - Otherwise return 0
+
+
+
+_try_load_agent(pkl_path)
+    - Try to import QLearningAgent from agent module
+    - Search for agent.pkl in:
+        - runs/run1/agent.pkl
+        - current working directory
+        - same folder as the script
+    - If found: load and return agent
+    - If not found: show error message on screen for 3 seconds, then return None
+
+supa16 with agent + human_player
+    - human_player = 1 or 2
+    - ai_player = the other side (3 - human_player)
+    - During update():
+        - If current_player == ai_player and not game_over:
+            - Wait ai_think_delay seconds (so AI doesn't move instantly)
+            - Call agent.choose_action(state_key, valid_moves, greedy=True)
+            - Execute the move
+    - Human player uses keyboard as normal
+
+
+
+
+
+
+
+
+
+agent = QLearningAgent()
+engine = GameEngine()
+
+for episode in 1..EPISODES:
+    engine.reset()
+
+    while not engine.game_over and engine.move_count < MAX_MOVES:
+        cp = engine.current_player
+        s = encode(engine.get_state(), perspective=cp)
+        a = agent.choose_action(s, engine.valid_moves)
+        result = engine.do_move(a)
+        s_next = encode(engine.get_state(), perspective=cp)
+        r = compute_reward(result, cp)
+        agent.update(s, a, r, s_next, engine.game_over)
+
+    agent.decay_epsilon()
+
+    if episode % 500 == 0:
+        evaluate(agent, RandomAgent(), 100)
+        evaluate(agent, GreedyAgent(), 100)
