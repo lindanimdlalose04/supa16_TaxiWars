@@ -106,9 +106,9 @@ def _bfs_min_distance(start, targets, blocked_node=None):
 _OBSTACLE_SEVERITY = {None: 0.0, "POL": 0.33, "NK": 0.67, "SNK": 1.0}
 
 
-# ─────────────────────────────────────────────────────────────────────────
+
 # 1. FEATURE ENCODING
-# ─────────────────────────────────────────────────────────────────────────
+
 
 def encode_features(state, perspective):
     """
@@ -174,7 +174,7 @@ def encode_features(state, perspective):
     # Feature 13: move freedom = fraction of max possible degree available
     move_freedom = n_valid / _MAX_DEGREE if _MAX_DEGREE > 0 else 0.0
 
-    # ─── Feature 14: region completion pressure ──────────────────────────
+    #  Feature 14: region completion pressure
     # For each region I have *partially* claimed (own at least one node, but
     # not all), find the shortest path (in moves) to my nearest unowned node
     # in that region. Convert to a 0..1 score where higher = closer to claim.
@@ -200,7 +200,7 @@ def encode_features(state, perspective):
     else:
         region_completion_pressure = 0.0
 
-    # ─── Feature 15: worst obstacle on any adjacent (valid) route ────────
+    # Feature 15: worst obstacle on any adjacent (valid) route 
     # If a route has an uncleared obstacle, we record its severity.
     # The feature is the *max* severity across my valid routes — i.e. the
     # worst thing I could step into right now. 0 if every neighbour is safe.
