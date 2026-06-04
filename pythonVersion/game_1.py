@@ -24,8 +24,8 @@ TURN_TIME      = 30.0   # seconds per turn
 
 
 C = {
-    # ── Backgrounds (light parchment theme) ──────────────────────────────
-    'bg':            (30,32,50),#(40, 45, 22),   # cream parchment (KZN landmass base)
+    # Backgrounds (light parchment theme) 
+    'bg':            (250, 244, 230),#(40, 45, 22),   # cream parchment (KZN landmass base)
     'bg_grid':       (140, 126, 100),   # used for neighbour borders (dashed)
     'panel':         (250, 244, 230),   # warm cream sidebar
     'panel_border':  ( 42,  38,  32),   # dark slate
@@ -68,7 +68,7 @@ C = {
     'node_border':   ( 42,  38,  32),   # dark slate
 
     # ── Valid-move ring (still soft yellow, reads on cream) ─────────────
-    'valid_ring':    (225, 255,  255),   # amber, darker so it stands on cream
+    'valid_ring':    (1,1,1),#(225, 255,  255),   # amber, darker so it stands on cream
 
     # ── Roads (dark asphalt + cream centreline) ─────────────────────────
     'road_edge':     ( 30,  26,  22),   # very dark edge
