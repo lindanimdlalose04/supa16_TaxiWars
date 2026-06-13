@@ -292,8 +292,8 @@ class MenuScreen:
         ('Solo Play  (Human vs Human)',   MODE_PVP),
         ('Play vs AI  (you = P1)',        MODE_HUMAN_P1),
         ('Play vs AI  (you = P2)',        MODE_HUMAN_P2),
-        ('ML Training  (headless)',       MODE_TRAINING),
-        ('ML vs Human  (coming soon)',    MODE_ML_VS),
+        #('ML Training  (headless)',       MODE_TRAINING),
+        #('ML vs Human  (coming soon)',    MODE_ML_VS),
         ('Exit',                          'exit'),
     ]
 
